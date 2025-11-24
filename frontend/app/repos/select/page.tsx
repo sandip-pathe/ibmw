@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { withAuth } from "@/lib/withAuth";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -24,7 +23,7 @@ function SelectReposPage() {
     const loadRepos = async () => {
       const token = localStorage.getItem("github_access_token");
       if (!token) {
-        router.push("/auth/signin");
+        router.push("/handler/sign-in");
         return;
       }
 
@@ -260,4 +259,4 @@ function SelectReposPage() {
   );
 }
 
-export default withAuth(SelectReposPage);
+export default SelectReposPage;

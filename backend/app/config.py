@@ -3,6 +3,7 @@ Application configuration using Pydantic Settings.
 Loads from environment variables with validation.
 """
 from functools import lru_cache
+import os
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -11,7 +12,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    # RSS Scraper Feature Flag
+    enable_rss_scraper: bool = False
     """Application settings with environment variable loading."""
+
+    def __getattr__(self, name):
+        return getattr(super(), name)
 
     model_config = SettingsConfigDict(
         env_file=".env",

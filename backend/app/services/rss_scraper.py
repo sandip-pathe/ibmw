@@ -31,7 +31,7 @@ class RSSScraperAgent:
     
     async def run_scrape_cycle(self):
         """Called every 5 minutes by Scheduler"""
-        logger.info("Starting 5-minute RSS polling cycle...")
+        # logger.info("Starting 5-minute RSS polling cycle...")
         results = {"new": 0, "errors": 0}
 
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
@@ -42,7 +42,7 @@ class RSSScraperAgent:
                     logger.error(f"Feed error {feed_config['url']}: {e}")
                     results["errors"] += 1
         
-        logger.info(f"Scrape Cycle Complete: {results}")
+        # logger.info(f"Scrape Cycle Complete: {results}")
         return results
 
     async def _process_feed(self, client, config, results):
@@ -55,7 +55,7 @@ class RSSScraperAgent:
                 if await self._is_url_processed(entry.link):
                     continue
 
-                logger.info(f"New circular detected: {entry.title}")
+                # logger.info(f"New circular detected: {entry.title}")
 
                 # 2. Content Extraction (HTML First Strategy)
                 content, content_type = await self._fetch_smart_content(client, entry.link)
@@ -122,7 +122,7 @@ class RSSScraperAgent:
                         base = "/".join(url.split("/")[:3])
                         pdf_url = f"{base}/{pdf_url.lstrip('/')}"
                     
-                    logger.info(f"Falling back to PDF download: {pdf_url}")
+                    # logger.info(f"Falling back to PDF download: {pdf_url}")
                     pdf_resp = await client.get(pdf_url)
                     return pdf_resp.content, "pdf"
 

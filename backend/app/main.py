@@ -28,8 +28,8 @@ async def lifespan(app: FastAPI):
     await db.connect()
     await job_queue.connect_async()
 
-    # Start RSS Scheduler (Every 5 minutes)
-    if settings.is_production or True: # Force True for demo
+    # Start RSS Scheduler only if enabled
+    if getattr(settings, "enable_rss_scraper", False):
         scheduler.add_job(rss_agent.run_scrape_cycle, 'interval', minutes=5)
         scheduler.start()
         logger.info("RSS Scraper Scheduler started (5 min interval)")

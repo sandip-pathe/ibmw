@@ -1,7 +1,6 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { withAuth } from "@/lib/withAuth";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,19 +25,18 @@ function DashboardPage() {
   const router = useRouter();
   const [isConnectingGitHub, setIsConnectingGitHub] = useState(false);
   const [githubUser, setGithubUser] = useState<GitHubUser | null>(null);
+  // Remove isSessionChecked, session is protected by withAuth
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check if user is logged in
-    const email = localStorage.getItem("user_email");
-    if (!email) {
-      router.push("/auth/signin");
-      return;
-    }
+    if (typeof window === "undefined") return;
+    setTimeout(() => {
+      setUserEmail(localStorage.getItem("user_email"));
+    }, 0);
 
     // Check if GitHub is connected
     const token = localStorage.getItem("github_access_token");
     const userStr = localStorage.getItem("github_user");
-
     if (token && userStr) {
       try {
         const user = JSON.parse(userStr) as GitHubUser;
@@ -67,16 +65,7 @@ function DashboardPage() {
     router.push("/");
   };
 
-  if (!githubUser) {
-    // Ideally show a state even if not connected to GitHub, but for now relying on this flow
-    const email =
-      typeof window !== "undefined" ? localStorage.getItem("user_email") : null;
-    if (!email) return null;
-    // If email exists but no github, render the connect github view (handled below)
-  }
-
-  const userEmail =
-    typeof window !== "undefined" ? localStorage.getItem("user_email") : null;
+  // Remove loading UI, session is protected by withAuth
 
   return (
     <div className="min-h-screen bg-black">
@@ -232,4 +221,4 @@ function DashboardPage() {
   );
 }
 
-export default withAuth(DashboardPage);
+export default DashboardPage;

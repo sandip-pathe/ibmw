@@ -13,10 +13,10 @@ export default function Home() {
             <span className="font-bold text-xl">Compliance Engine</span>
           </div>
           <div className="flex gap-3">
-            <Link href="/auth/signin">
+            <Link href="/handler/sign-in">
               <Button variant="ghost">Sign In</Button>
             </Link>
-            <Link href="/auth/signup">
+            <Link href="/handler/sign-up">
               <Button>Get Started</Button>
             </Link>
           </div>
@@ -36,15 +36,15 @@ export default function Home() {
             Connect your GitHub account and get instant insights.
           </p>
           <div className="flex gap-4 justify-center">
-            <Link href="/auth/signup">
+            <Link href="/handler/sign-up">
               <Button size="lg" className="gap-2">
                 <Github className="h-5 w-5" />
                 Start with GitHub
               </Button>
             </Link>
-            <Link href="/auth/signin">
+            <Link href="/handler/sign-in">
               <Button size="lg" variant="outline">
-                Sign In with Email
+                Sign In
               </Button>
             </Link>
           </div>

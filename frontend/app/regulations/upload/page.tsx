@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { withAuth } from "@/lib/withAuth";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { apiClient } from "@/lib/api-client";
@@ -196,4 +195,4 @@ function UploadRegulationPage() {
   );
 }
 
-export default withAuth(UploadRegulationPage);
+export default UploadRegulationPage;

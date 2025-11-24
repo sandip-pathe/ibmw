@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { withAuth } from "@/lib/withAuth";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { apiClient, type ScrapeResult } from "@/lib/api-client";
@@ -224,4 +223,4 @@ function LiveFeedPage() {
   );
 }
 
-export default withAuth(LiveFeedPage);
+export default LiveFeedPage;

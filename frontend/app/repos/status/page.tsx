@@ -29,7 +29,7 @@ export default function ReposStatusPage() {
   useEffect(() => {
     const token = localStorage.getItem("github_access_token");
     if (!token) {
-      router.push("/auth/signin");
+      router.push("/handler/sign-in");
     }
   }, [router]);
 
