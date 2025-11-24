@@ -137,21 +137,28 @@ class RepositoryQueries:
         await conn.execute(query, repo_id, commit_sha, file_count, chunk_count)
 
 
-class CodeChunkQueries:
-    """SQL queries for code_chunks table."""
+
+class CodeMapQueries:
+    """SQL queries for code_map table."""
 
     @staticmethod
     async def insert_batch(conn, chunks: list[dict[str, Any]]) -> int:
-        """Batch insert code chunks."""
+        """Batch insert code map chunks."""
         query = """
-            INSERT INTO code_chunks (
+            INSERT INTO code_map (
                 repo_id, file_path, language, start_line, end_line,
                 chunk_text, ast_node_type, file_hash, chunk_hash,
-                embedding, nl_summary, metadata
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                embedding, nl_summary, metadata, call_links, variables, config_keys, semantic_tags, previous_hash, delta_type
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
             ON CONFLICT (chunk_hash) DO UPDATE SET
                 embedding = EXCLUDED.embedding,
                 nl_summary = EXCLUDED.nl_summary,
+                call_links = EXCLUDED.call_links,
+                variables = EXCLUDED.variables,
+                config_keys = EXCLUDED.config_keys,
+                semantic_tags = EXCLUDED.semantic_tags,
+                previous_hash = EXCLUDED.previous_hash,
+                delta_type = EXCLUDED.delta_type,
                 updated_at = NOW()
         """
         async with conn.transaction():
@@ -171,6 +178,12 @@ class CodeChunkQueries:
                         chunk.get("embedding"),
                         chunk.get("nl_summary"),
                         chunk.get("metadata", {}),
+                        chunk.get("call_links", []),
+                        chunk.get("variables", {}),
+                        chunk.get("config_keys", {}),
+                        chunk.get("semantic_tags", []),
+                        chunk.get("previous_hash"),
+                        chunk.get("delta_type"),
                     )
                     for chunk in chunks
                 ],
@@ -178,15 +191,29 @@ class CodeChunkQueries:
         return len(chunks)
 
     @staticmethod
+    async def get_by_repo(
+        conn, repo_id: UUID, limit: int = 100, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        """Get code map chunks for a repository."""
+        query = """
+            SELECT * FROM code_map
+            WHERE repo_id = $1
+            ORDER BY file_path, start_line
+            LIMIT $2 OFFSET $3
+        """
+        records = await conn.fetch(query, repo_id, limit, offset)
+        return records_to_list(records)
+
+    @staticmethod
     async def search_similar(
         conn, embedding: list[float], repo_id: Optional[UUID], top_k: int = 10
     ) -> list[dict[str, Any]]:
-        """Find similar code chunks using vector similarity."""
+        """Find similar code map chunks using vector similarity."""
         if repo_id:
             query = """
                 SELECT *,
                     (embedding <-> $1::vector) AS distance
-                FROM code_chunks
+                FROM code_map
                 WHERE repo_id = $2
                 ORDER BY embedding <-> $1::vector
                 LIMIT $3
@@ -196,25 +223,65 @@ class CodeChunkQueries:
             query = """
                 SELECT *,
                     (embedding <-> $1::vector) AS distance
-                FROM code_chunks
+                FROM code_map
                 ORDER BY embedding <-> $1::vector
                 LIMIT $2
             """
             records = await conn.fetch(query, embedding, top_k)
         return records_to_list(records)
 
+class FlowGraphQueries:
+    """SQL queries for flow_graph table."""
+
     @staticmethod
-    async def get_by_repo(
-        conn, repo_id: UUID, limit: int = 100, offset: int = 0
-    ) -> list[dict[str, Any]]:
-        """Get code chunks for a repository."""
+    async def insert(conn, graph_data: dict[str, Any]) -> UUID:
         query = """
-            SELECT * FROM code_chunks
-            WHERE repo_id = $1
-            ORDER BY file_path, start_line
-            LIMIT $2 OFFSET $3
+            INSERT INTO flow_graph (
+                repo_id, node_id, file_path, function_name, edges, metadata
+            ) VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING id
         """
-        records = await conn.fetch(query, repo_id, limit, offset)
+        return await conn.fetchval(
+            query,
+            graph_data["repo_id"],
+            graph_data["node_id"],
+            graph_data["file_path"],
+            graph_data["function_name"],
+            graph_data.get("edges", []),
+            graph_data.get("metadata", {}),
+        )
+
+    @staticmethod
+    async def get_by_repo(conn, repo_id: UUID) -> list[dict[str, Any]]:
+        query = "SELECT * FROM flow_graph WHERE repo_id = $1"
+        records = await conn.fetch(query, repo_id)
+        return records_to_list(records)
+
+class ComplianceEvidenceQueries:
+    """SQL queries for compliance_evidence table."""
+
+    @staticmethod
+    async def insert(conn, evidence_data: dict[str, Any]) -> UUID:
+        query = """
+            INSERT INTO compliance_evidence (
+                repo_id, rule_id, chunk_id, finding_text, severity, line_number
+            ) VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING id
+        """
+        return await conn.fetchval(
+            query,
+            evidence_data["repo_id"],
+            evidence_data["rule_id"],
+            evidence_data["chunk_id"],
+            evidence_data["finding_text"],
+            evidence_data["severity"],
+            evidence_data["line_number"],
+        )
+
+    @staticmethod
+    async def get_by_repo(conn, repo_id: UUID) -> list[dict[str, Any]]:
+        query = "SELECT * FROM compliance_evidence WHERE repo_id = $1"
+        records = await conn.fetch(query, repo_id)
         return records_to_list(records)
 
 

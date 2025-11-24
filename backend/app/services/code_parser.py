@@ -223,37 +223,32 @@ class CodeParser:
         # For demo, return placeholder
         return {"language": language, "type": "module", "content": content}
 
+
     def extract_functions_fallback(
         self, content: str, language: str
     ) -> list[dict[str, any]]:
         """
         Fallback function extraction using regex (for demo without full Tree-sitter).
-
-        Args:
-            content: File content
-            language: Programming language
-
-        Returns:
-            List of function/class definitions with line numbers
+        Populates code_map fields: call_links, semantic_tags, variables, config_keys.
         """
         chunks = []
+        semantic_tags = []
+        # Simple tag detection (demo)
+        tag_keywords = ["kyc", "storage", "upi", "auth", "payment", "compliance"]
+        for tag in tag_keywords:
+            if tag in content.lower():
+                semantic_tags.append(tag)
 
         if language == "python":
-            # Match Python functions and classes
             pattern = r"^(class|def|async def)\s+(\w+)"
             lines = content.split("\n")
-
             for i, line in enumerate(lines):
                 match = re.match(pattern, line.strip())
                 if match:
                     node_type = match.group(1)
                     name = match.group(2)
-
-                    # Find end of block (next function/class or EOF)
                     start_line = i + 1
                     end_line = start_line
-
-                    # Simple heuristic: find next def/class at same or lower indentation
                     base_indent = len(line) - len(line.lstrip())
                     for j in range(i + 1, len(lines)):
                         if lines[j].strip() and not lines[j].strip().startswith("#"):
@@ -263,8 +258,13 @@ class CodeParser:
                                 break
                     else:
                         end_line = len(lines)
-
                     chunk_text = "\n".join(lines[i:end_line])
+                    # Extract call_links
+                    call_links = list(set([call for call_list in detect_function_calls(chunk_text).values() for call in call_list]))
+                    # Extract variables
+                    variables = extract_constants_from_code(chunk_text)
+                    # Extract config_keys
+                    config_keys = find_hardcoded_thresholds(variables)
                     chunks.append(
                         {
                             "type": "function" if "def" in node_type else "class",
@@ -272,25 +272,23 @@ class CodeParser:
                             "start_line": start_line,
                             "end_line": end_line,
                             "text": chunk_text,
+                            "call_links": call_links,
+                            "variables": variables,
+                            "config_keys": config_keys,
+                            "semantic_tags": semantic_tags,
                         }
                     )
-
         elif language in ["javascript", "typescript"]:
-            # Match JS/TS functions and classes
             pattern = r"^(function|class|const|let|var)\s+(\w+)"
             lines = content.split("\n")
-
             for i, line in enumerate(lines):
                 match = re.match(pattern, line.strip())
                 if match:
                     node_type = match.group(1)
                     name = match.group(2)
                     start_line = i + 1
-
-                    # Simple block detection (until closing brace)
                     brace_count = line.count("{") - line.count("}")
                     end_line = start_line
-
                     for j in range(i + 1, len(lines)):
                         brace_count += lines[j].count("{") - lines[j].count("}")
                         if brace_count <= 0:
@@ -298,8 +296,11 @@ class CodeParser:
                             break
                     else:
                         end_line = len(lines)
-
                     chunk_text = "\n".join(lines[i:end_line])
+                    # JS/TS: call_links, variables, config_keys, semantic_tags (stub)
+                    call_links = []
+                    variables = {}
+                    config_keys = {}
                     chunks.append(
                         {
                             "type": "function" if node_type == "function" else "declaration",
@@ -307,9 +308,12 @@ class CodeParser:
                             "start_line": start_line,
                             "end_line": end_line,
                             "text": chunk_text,
+                            "call_links": call_links,
+                            "variables": variables,
+                            "config_keys": config_keys,
+                            "semantic_tags": semantic_tags,
                         }
                     )
-
         return chunks
 
 

@@ -4,7 +4,14 @@ import { useRouter } from "next/navigation";
 import { withAuth } from "@/lib/withAuth";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Github, Loader2, ArrowRight, Shield } from "lucide-react";
+import {
+  Github,
+  Loader2,
+  ArrowRight,
+  Upload,
+  Activity,
+  FileText,
+} from "lucide-react";
 import { apiClient } from "@/lib/api-client";
 
 interface GitHubUser {
@@ -56,15 +63,16 @@ function DashboardPage() {
   const handleSignOut = () => {
     localStorage.removeItem("github_access_token");
     localStorage.removeItem("github_user");
+    localStorage.removeItem("user_email");
     router.push("/");
   };
 
   if (!githubUser) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-      </div>
-    );
+    // Ideally show a state even if not connected to GitHub, but for now relying on this flow
+    const email =
+      typeof window !== "undefined" ? localStorage.getItem("user_email") : null;
+    if (!email) return null;
+    // If email exists but no github, render the connect github view (handled below)
   }
 
   const userEmail =
@@ -101,48 +109,96 @@ function DashboardPage() {
       </nav>
 
       {/* Main Content */}
-      <main className="container mx-auto px-6 py-16">
-        <div className="max-w-3xl mx-auto">
-          <h1 className="text-white text-4xl font-bold mb-3">
-            Welcome
-            {githubUser ? `, ${githubUser.name || githubUser.login}` : ""}!
-          </h1>
-          <p className="text-gray-400 text-lg mb-12">
-            Connect your GitHub account to start analyzing your repositories for
-            compliance.
-          </p>
+      <main className="container mx-auto px-6 py-12">
+        <div className="max-w-5xl mx-auto">
+          <div className="mb-12">
+            <h1 className="text-white text-3xl font-bold mb-2">
+              Compliance Dashboard
+            </h1>
+            <p className="text-gray-400">
+              Manage regulations and analyze repositories.
+            </p>
+          </div>
+
+          {/* Regulation Tools Grid */}
+          <div className="grid md:grid-cols-3 gap-6 mb-12">
+            {/* Card 1: Live Feed */}
+            <div
+              className="bg-[#111] border border-[#333] p-6 rounded-xl hover:border-blue-800 transition-colors cursor-pointer group"
+              onClick={() => router.push("/regulations/live")}
+            >
+              <div className="h-10 w-10 bg-blue-900/30 rounded-lg flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors text-blue-500">
+                <Activity className="h-5 w-5" />
+              </div>
+              <h3 className="text-white font-semibold mb-1">
+                Live Regulatory Feed
+              </h3>
+              <p className="text-gray-400 text-sm">
+                Monitor RBI & SEBI RSS feeds in real-time.
+              </p>
+            </div>
+
+            {/* Card 2: Manual Upload */}
+            <div
+              className="bg-[#111] border border-[#333] p-6 rounded-xl hover:border-blue-800 transition-colors cursor-pointer group"
+              onClick={() => router.push("/regulations/upload")}
+            >
+              <div className="h-10 w-10 bg-purple-900/30 rounded-lg flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors text-purple-500">
+                <Upload className="h-5 w-5" />
+              </div>
+              <h3 className="text-white font-semibold mb-1">
+                Upload Regulation
+              </h3>
+              <p className="text-gray-400 text-sm">
+                Ingest PDF Master Directions manually.
+              </p>
+            </div>
+
+            {/* Card 3: Review Queue */}
+            <div
+              className="bg-[#111] border border-[#333] p-6 rounded-xl hover:border-blue-800 transition-colors cursor-pointer group"
+              onClick={() => router.push("/regulations/review")}
+            >
+              <div className="h-10 w-10 bg-yellow-900/30 rounded-lg flex items-center justify-center mb-4 group-hover:bg-yellow-600 group-hover:text-white transition-colors text-yellow-500">
+                <FileText className="h-5 w-5" />
+              </div>
+              <h3 className="text-white font-semibold mb-1">Review Queue</h3>
+              <p className="text-gray-400 text-sm">
+                Approve draft regulations detected by AI.
+              </p>
+            </div>
+          </div>
+
+          <h2 className="text-xl font-bold text-white mb-4">Repositories</h2>
 
           {!githubUser ? (
-            <div className="bg-[#111] border border-[#333] rounded-lg p-12">
-              <div className="text-center max-w-md mx-auto">
-                <div className="w-16 h-16 bg-[#1a1a1a] border border-[#333] rounded-full flex items-center justify-center mx-auto mb-6">
-                  <Github className="h-8 w-8 text-gray-400" />
-                </div>
-                <h2 className="text-white text-2xl font-semibold mb-3">
-                  Connect GitHub
-                </h2>
-                <p className="text-gray-400 mb-8">
-                  Install the GitHub application for the accounts you wish to
-                  import from to continue
-                </p>
-                <Button
-                  onClick={handleConnectGitHub}
-                  disabled={isConnectingGitHub}
-                  className="bg-white text-black hover:bg-gray-200 h-11 px-6 font-medium gap-2"
-                >
-                  {isConnectingGitHub ? (
-                    <>
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                      Connecting...
-                    </>
-                  ) : (
-                    <>
-                      <Github className="h-5 w-5" />
-                      Install
-                    </>
-                  )}
-                </Button>
+            <div className="bg-[#111] border border-[#333] rounded-lg p-12 text-center">
+              <div className="w-16 h-16 bg-[#1a1a1a] border border-[#333] rounded-full flex items-center justify-center mx-auto mb-6">
+                <Github className="h-8 w-8 text-gray-400" />
               </div>
+              <h2 className="text-white text-2xl font-semibold mb-3">
+                Connect GitHub
+              </h2>
+              <p className="text-gray-400 mb-8">
+                Link your account to select repositories for analysis.
+              </p>
+              <Button
+                onClick={handleConnectGitHub}
+                disabled={isConnectingGitHub}
+                className="bg-white text-black hover:bg-gray-200 h-11 px-6 font-medium gap-2"
+              >
+                {isConnectingGitHub ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    Connecting...
+                  </>
+                ) : (
+                  <>
+                    <Github className="h-5 w-5" />
+                    Connect GitHub
+                  </>
+                )}
+              </Button>
             </div>
           ) : (
             <div className="space-y-6">
@@ -156,7 +212,7 @@ function DashboardPage() {
                       GitHub Connected
                     </h3>
                     <p className="text-sm text-gray-400">
-                      Your GitHub account is linked
+                      Ready to analyze code
                     </p>
                   </div>
                 </div>
@@ -167,27 +223,6 @@ function DashboardPage() {
                   Select Repositories
                   <ArrowRight className="h-4 w-4" />
                 </Button>
-              </div>
-
-              <div className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-lg p-6">
-                <h3 className="text-white font-semibold mb-4">Next Steps</h3>
-                <ul className="space-y-3 text-sm text-gray-400">
-                  <li className="flex items-start gap-3">
-                    <span className="text-blue-400 mt-0.5">•</span>
-                    <span>Select repositories you want to analyze</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <span className="text-blue-400 mt-0.5">•</span>
-                    <span>
-                      We&apos;ll index your code and analyze for compliance
-                      issues
-                    </span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <span className="text-blue-400 mt-0.5">•</span>
-                    <span>Get real-time alerts for new violations</span>
-                  </li>
-                </ul>
               </div>
             </div>
           )}

@@ -75,8 +75,9 @@ class RepositoryResponse(BaseModel):
 
 
 # Code Analysis
-class CodeChunkResponse(BaseModel):
-    """Code chunk response."""
+
+class CodeMapResponse(BaseModel):
+    """Code map chunk response."""
     chunk_id: UUID
     file_path: str
     language: str
@@ -85,6 +86,12 @@ class CodeChunkResponse(BaseModel):
     chunk_text: str
     ast_node_type: Optional[str] = None
     nl_summary: Optional[str] = None
+    call_links: list[Any] = Field(default_factory=list)
+    variables: dict[str, Any] = Field(default_factory=dict)
+    config_keys: dict[str, Any] = Field(default_factory=dict)
+    semantic_tags: list[str] = Field(default_factory=list)
+    previous_hash: Optional[str] = None
+    delta_type: Optional[str] = None
     similarity_score: Optional[float] = None
 
 
@@ -134,11 +141,12 @@ class AnalyzeRuleRequest(BaseModel):
     severity_threshold: Optional[Literal["critical", "high", "medium", "low"]] = None
 
 
+
 class AnalyzeRuleResponse(BaseModel):
     """Response for rule analysis."""
     rule_text: str
     repo_id: UUID
-    matched_chunks: list[CodeChunkResponse]
+    matched_chunks: list[CodeMapResponse]
     violations: list[ViolationResponse]
     summary: str
 
@@ -153,22 +161,33 @@ class FullScanRequest(BaseModel):
 
 # Regulation Processing
 class RegulationChunkResponse(BaseModel):
-    """Regulation chunk response."""
-    chunk_id: UUID
-    rule_id: str
-    rule_section: Optional[str] = None
-    source_document: Optional[str] = None
-    chunk_text: str
-    chunk_index: int
-    nl_summary: Optional[str] = None
-    created_at: datetime
-
 
 class UploadRegulationRequest(BaseModel):
-    """Request to upload regulation document."""
+
+# Flow Graph
+class FlowGraphNode(BaseModel):
+    node_id: str
+    file_path: str
+    function_name: str
+    edges: list[Any] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+class FlowGraphResponse(BaseModel):
+    id: UUID
+    repo_id: UUID
+    nodes: list[FlowGraphNode]
+    created_at: datetime
+
+# Compliance Evidence
+class ComplianceEvidenceResponse(BaseModel):
+    id: UUID
+    repo_id: UUID
     rule_id: str
-    source_document: str
-    chunks: list[dict[str, Any]]  # Pre-chunked regulation data
+    chunk_id: UUID
+    finding_text: str
+    severity: str
+    line_number: int
+    created_at: datetime
 
 
 # Job Status
