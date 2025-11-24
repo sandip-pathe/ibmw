@@ -28,7 +28,7 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = Field(
-        default="postgresql://neondb_owner:npg_kG5CMdJ6vjat@ep-patient-fog-a88gl4kv-pooler.eastus2.azure.neon.tech/neondb?sslmode=require",
+        default_factory=lambda: os.getenv("DATABASE_URL", ""),
         description="Neon Postgres connection string (asyncpg or psycopg)"
     )
 
