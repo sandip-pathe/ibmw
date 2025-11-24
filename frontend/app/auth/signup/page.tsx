@@ -71,85 +71,39 @@ export default function SignUpPage() {
                 <Shield className="h-8 w-8 text-white" />
               </div>
               <h2 className="text-4xl font-bold text-gray-900 mb-4">
-                AI-Powered Compliance for Fintech
-              </h2>
-              <p className="text-xl text-gray-600">
-                Analyze your code repositories against regulatory requirements
-                automatically.
-              </p>
-            </div>
+                "use client";
 
-            <div className="space-y-4">
-              <div className="flex items-start gap-4">
-                <div className="shrink-0 w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <Code className="h-5 w-5 text-blue-600" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-gray-900 mb-1">
-                    Deep Code Analysis
-                  </h3>
-                  <p className="text-gray-600 text-sm">
-                    AST-aware parsing understands your code structure
-                  </p>
-                </div>
-              </div>
+                import { Button } from "@/components/ui/button";
+                import Link from "next/link";
 
-              <div className="flex items-start gap-4">
-                <div className="shrink-0 w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                  <Zap className="h-5 w-5 text-green-600" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-gray-900 mb-1">
-                    Real-time Monitoring
-                  </h3>
-                  <p className="text-gray-600 text-sm">
-                    Get instant alerts on compliance violations via webhooks
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-4">
-                <div className="shrink-0 w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
-                  <AlertTriangle className="h-5 w-5 text-orange-600" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-gray-900 mb-1">
-                    Actionable Insights
-                  </h3>
-                  <p className="text-gray-600 text-sm">
-                    Detailed remediation guidance for each violation
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-blue-50 rounded-xl p-6 border border-blue-100">
-              <div className="flex items-center gap-2 mb-3">
-                <Check className="h-5 w-5 text-blue-600" />
-                <span className="font-semibold text-blue-900">
-                  Free for public repositories
-                </span>
-              </div>
-              <p className="text-sm text-blue-700">
-                Start analyzing your code in under 2 minutes
-              </p>
-            </div>
-          </div>
-
-          {/* Right: Sign up form */}
-          <div className="w-full">
-            <div className="lg:hidden text-center mb-8">
-              <div className="inline-flex items-center justify-center w-16 h-16 bg-linear-to-br from-blue-600 to-indigo-600 rounded-2xl mb-4 shadow-lg">
-                <Shield className="h-8 w-8 text-white" />
-              </div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">
-                Create your account
-              </h1>
-              <p className="text-gray-600">Start analyzing in minutes</p>
-            </div>
-
-            <div className="hidden lg:block mb-6">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                export default function SignUpPage() {
+                  return (
+                    <div className="min-h-screen bg-linear-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center px-4 py-12">
+                      <div className="w-full max-w-[340px] mx-auto">
+                        <h1 className="text-3xl font-bold text-gray-900 mb-8 text-center">
+                          Create your account
+                        </h1>
+                        {/* Neon Auth (includes GitHub & Google) */}
+                        <Link href="/handler/sign-up" passHref legacyBehavior>
+                          <Button className="w-full h-12 mb-4 bg-[#00e599] hover:bg-[#00c47a] text-black font-medium rounded-md flex items-center justify-center gap-3">
+                            {/* Neon logo SVG */}
+                            <svg width="20" height="20" viewBox="0 0 32 32" fill="none">
+                              <circle cx="16" cy="16" r="16" fill="#00e599"/>
+                              <path d="M10 16c0-3.314 2.686-6 6-6s6 2.686 6 6-2.686 6-6 6-6-2.686-6-6z" fill="#fff"/>
+                            </svg>
+                            Sign up with Neon, GitHub, or Google
+                          </Button>
+                        </Link>
+                        <div className="text-center text-gray-500 text-sm mt-6">
+                          Already have an account?{" "}
+                          <Link href="/auth/signin" className="text-blue-600 hover:underline font-semibold">
+                            Sign in
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
                 Get started today
               </h2>
               <p className="text-gray-600">Sign up with your GitHub account</p>
