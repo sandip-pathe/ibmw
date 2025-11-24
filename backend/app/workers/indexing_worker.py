@@ -1,0 +1,388 @@
+async def reindex_changed_files(repo_id: str, installation_id: int, full_name: str, commit_sha: str, changed_files: list):
+    """
+    Re-chunk, re-embed, and update only changed files in vector DB.
+    """
+    repo_uuid = UUID(repo_id)
+    owner, repo_name = full_name.split("/")
+    # Clone repo to temp dir (reuse logic from _async_index_repository)
+    temp_dir = tempfile.mkdtemp(dir=settings.temp_clone_path)
+    clone_path = Path(temp_dir) / repo_name
+    try:
+        token = await github_client.get_installation_token(installation_id)
+        clone_url = f"https://x-access-token:{token}@github.com/{full_name}.git"
+        branch = commit_sha if commit_sha else "HEAD"
+        subprocess.run([
+            "git", "clone", "--depth=1", "--single-branch", "--branch", branch, clone_url, str(clone_path)
+        ], check=True, capture_output=True, timeout=300)
+        # For each changed file, re-chunk and re-embed
+        for rel_path in changed_files:
+            file_path = clone_path / rel_path
+            if not file_path.exists():
+                continue
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            chunks = code_chunker.chunk_file(str(rel_path), content, repo_uuid)
+            for chunk in chunks:
+                text_hash = embeddings_service.compute_text_hash(chunk["chunk_text"])
+                embedding = await embeddings_service.embed_text(chunk["chunk_text"])
+                chunk["embedding"] = embedding
+                summary = await llm_service.generate_code_summary(
+                    chunk["chunk_text"], chunk["language"], chunk["file_path"])
+                chunk["nl_summary"] = summary
+            # Store updated chunks in DB
+            async with db.acquire() as conn:
+                await CodeChunkQueries.upsert_batch(conn, chunks)
+        logger.info(f"Reindexed changed files for repo {full_name}: {changed_files}")
+    finally:
+        import shutil
+        shutil.rmtree(temp_dir, ignore_errors=True)
+"""
+RQ worker for background indexing and analysis jobs.
+"""
+import asyncio
+import subprocess
+import tempfile
+from pathlib import Path
+from typing import Optional
+from uuid import UUID
+
+from loguru import logger
+
+from app.config import get_settings
+from app.core.github_client import github_client
+from app.database import db
+from app.models.database import (
+    CodeChunkQueries,
+    RegulationChunkQueries,
+    RepositoryQueries,
+    ScanQueries,
+    ViolationQueries,
+)
+from app.services.chunker import code_chunker
+from app.services.embeddings import embeddings_service
+from app.services.llm import llm_service
+from app.workers.queue import job_queue
+
+settings = get_settings()
+
+
+async def _async_index_repository(
+    repo_id: str, installation_id: int, full_name: str, commit_sha: Optional[str]
+) -> dict:
+    """Async implementation of repository indexing."""
+    repo_uuid = UUID(repo_id)
+    owner, repo_name = full_name.split("/")
+
+    logger.info(f"Starting indexing job for {full_name} (repo_id: {repo_id})")
+
+    try:
+        # Connect to database
+        await db.connect()
+
+        # Clone repository to temp directory
+        temp_dir = tempfile.mkdtemp(dir=settings.temp_clone_path)
+        clone_path = Path(temp_dir) / repo_name
+
+        try:
+            # Get installation token
+            token = await github_client.get_installation_token(installation_id)
+
+            # Clone repo (shallow, single branch)
+            clone_url = f"https://x-access-token:{token}@github.com/{full_name}.git"
+            branch = commit_sha if commit_sha else "HEAD"
+
+            subprocess.run(
+                [
+                    "git",
+                    "clone",
+                    "--depth=1",
+                    "--single-branch",
+                    "--branch",
+                    branch,
+                    clone_url,
+                    str(clone_path),
+                ],
+                check=True,
+                capture_output=True,
+                timeout=300,
+            )
+
+            logger.info(f"Cloned {full_name} to {clone_path}")
+
+            # Get commit SHA
+            result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=clone_path,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            actual_commit_sha = result.stdout.strip()
+
+            # Process files
+            all_chunks = []
+            file_count = 0
+
+            for ext in [".py", ".js", ".ts", ".java", ".go"]:
+                for file_path in clone_path.rglob(f"*{ext}"):
+                    if ".git" in file_path.parts or "node_modules" in file_path.parts:
+                        continue
+
+                    try:
+                        # Read file
+                        with open(file_path, "r", encoding="utf-8") as f:
+                            content = f.read()
+
+                        # Check file size
+                        if len(content) > settings.max_file_size_mb * 1024 * 1024:
+                            logger.warning(f"Skipping large file: {file_path}")
+                            continue
+
+                        # Chunk file
+                        relative_path = file_path.relative_to(clone_path)
+                        chunks = code_chunker.chunk_file(
+                            str(relative_path), content, repo_uuid
+                        )
+
+                        all_chunks.extend(chunks)
+                        file_count += 1
+
+                    except Exception as e:
+                        logger.warning(f"Failed to process {file_path}: {e}")
+
+            logger.info(f"Chunked {file_count} files into {len(all_chunks)} chunks")
+
+            # Generate embeddings and NL summaries
+            await job_queue.connect_async()
+
+            for chunk in all_chunks:
+                # Check cache for embedding
+                text_hash = embeddings_service.compute_text_hash(chunk["chunk_text"])
+                cached_embedding = await job_queue.get_cached_embedding(text_hash)
+
+                if cached_embedding:
+                    chunk["embedding"] = cached_embedding
+                else:
+                    embedding = await embeddings_service.embed_text(chunk["chunk_text"])
+                    chunk["embedding"] = embedding
+                    await job_queue.cache_embedding(text_hash, embedding)
+
+                # Check cache for NL summary
+                cached_summary = await job_queue.get_cached_nl_summary(chunk["chunk_hash"])
+
+                if cached_summary:
+                    chunk["nl_summary"] = cached_summary
+                else:
+                    try:
+                        summary = await llm_service.generate_code_summary(
+                            chunk["chunk_text"],
+                            chunk["language"],
+                            chunk["file_path"],
+                        )
+                        chunk["nl_summary"] = summary
+                        await job_queue.cache_nl_summary(chunk["chunk_hash"], summary)
+                    except Exception as e:
+                        logger.warning(f"Failed to generate NL summary: {e}")
+                        chunk["nl_summary"] = None
+
+            # Store chunks in database
+            async with db.acquire() as conn:
+                inserted = await CodeChunkQueries.insert_batch(conn, all_chunks)
+                await RepositoryQueries.update_sync_status(
+                    conn, repo_uuid, actual_commit_sha, file_count, len(all_chunks)
+                )
+
+            logger.info(f"Inserted {inserted} chunks for {full_name}")
+
+            return {
+                "status": "success",
+                "repo_id": repo_id,
+                "commit_sha": actual_commit_sha,
+                "files_processed": file_count,
+                "chunks_created": len(all_chunks),
+            }
+
+        finally:
+            # Cleanup temp directory
+            import shutil
+
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    except Exception as e:
+        logger.error(f"Indexing job failed for {full_name}: {e}")
+        return {
+            "status": "failed",
+            "repo_id": repo_id,
+            "error": str(e),
+        }
+
+
+def index_repository(
+    repo_id: str, installation_id: int, full_name: str, commit_sha: Optional[str] = None
+) -> dict:
+    """
+    RQ job: Index repository code.
+
+    Args:
+        repo_id: Repository UUID (string)
+        installation_id: GitHub installation ID
+        full_name: Repository full name (owner/repo)
+        commit_sha: Specific commit SHA
+
+    Returns:
+        Job result dictionary
+    """
+    return asyncio.run(
+        _async_index_repository(repo_id, installation_id, full_name, commit_sha)
+    )
+
+
+async def _async_analyze_compliance(
+    scan_id: str, repo_id: str, rule_ids: Optional[list[str]]
+) -> dict:
+    """Async implementation of compliance analysis."""
+    scan_uuid = UUID(scan_id)
+    repo_uuid = UUID(repo_id)
+
+    logger.info(f"Starting compliance analysis for scan {scan_id}")
+
+    try:
+        await db.connect()
+        await job_queue.connect_async()
+
+        async with db.acquire() as conn:
+            # Get all regulation chunks (or filter by rule_ids)
+            if rule_ids:
+                regulation_chunks = []
+                for rule_id in rule_ids:
+                    chunks = await RegulationChunkQueries.get_by_rule_id(conn, rule_id)
+                    regulation_chunks.extend(chunks)
+            else:
+                # Get all rules
+                all_rule_ids = await RegulationChunkQueries.list_all_rules(conn)
+                regulation_chunks = []
+                for rule_id in all_rule_ids:
+                    chunks = await RegulationChunkQueries.get_by_rule_id(conn, rule_id)
+                    regulation_chunks.extend(chunks)
+
+            logger.info(f"Analyzing against {len(regulation_chunks)} regulation chunks")
+
+            violations = []
+
+            # For each regulation chunk, find similar code chunks
+            for reg_chunk in regulation_chunks:
+                if not reg_chunk.get("embedding"):
+                    logger.warning(f"Regulation chunk {reg_chunk['chunk_id']} has no embedding")
+                    continue
+
+                # Vector similarity search
+                similar_chunks = await CodeChunkQueries.search_similar(
+                    conn,
+                    reg_chunk["embedding"],
+                    repo_uuid,
+                    top_k=settings.top_k_similar_chunks,
+                )
+
+                # Analyze each similar chunk with LLM
+                for code_chunk in similar_chunks:
+                    # Skip if similarity too low
+                    if code_chunk.get("distance", 1.0) > (1.0 - settings.similarity_threshold):
+                        continue
+
+                    try:
+                        analysis = await llm_service.analyze_compliance(
+                            rule_text=reg_chunk["chunk_text"],
+                            code_text=code_chunk["chunk_text"],
+                            file_path=code_chunk["file_path"],
+                            start_line=code_chunk["start_line"],
+                            end_line=code_chunk["end_line"],
+                            language=code_chunk["language"],
+                        )
+
+                        # Only store violations (non-compliant or partial)
+                        if analysis["verdict"] in ["non_compliant", "partial"]:
+                            violations.append(
+                                {
+                                    "scan_id": scan_uuid,
+                                    "rule_id": reg_chunk["rule_id"],
+                                    "code_chunk_id": code_chunk["chunk_id"],
+                                    "regulation_chunk_id": reg_chunk["chunk_id"],
+                                    "verdict": analysis["verdict"],
+                                    "severity": analysis["severity"],
+                                    "severity_score": analysis["severity_score"],
+                                    "explanation": analysis["explanation"],
+                                    "evidence": analysis.get("evidence"),
+                                    "remediation": analysis.get("remediation"),
+                                    "file_path": code_chunk["file_path"],
+                                    "start_line": code_chunk["start_line"],
+                                    "end_line": code_chunk["end_line"],
+                                }
+                            )
+
+                    except Exception as e:
+                        logger.warning(f"Failed to analyze chunk: {e}")
+
+            # Insert violations
+            if violations:
+                await ViolationQueries.insert_batch(conn, violations)
+
+            # Update scan status and counts
+            await ScanQueries.update_violation_counts(conn, scan_uuid)
+            await ScanQueries.update_status(
+                conn,
+                scan_uuid,
+                "completed",
+                {"violations_found": len(violations)},
+            )
+
+            logger.info(f"Compliance analysis completed: {len(violations)} violations found")
+
+            return {
+                "status": "success",
+                "scan_id": scan_id,
+                "violations_found": len(violations),
+            }
+
+    except Exception as e:
+        logger.error(f"Compliance analysis failed: {e}")
+
+        async with db.acquire() as conn:
+            await ScanQueries.update_status(conn, scan_uuid, "failed", error=str(e))
+
+        return {
+            "status": "failed",
+            "scan_id": scan_id,
+            "error": str(e),
+        }
+
+
+def analyze_compliance(
+    scan_id: str, repo_id: str, rule_ids: Optional[list[str]] = None
+) -> dict:
+    """
+    RQ job: Analyze repository compliance.
+
+    Args:
+        scan_id: Scan UUID (string)
+        repo_id: Repository UUID (string)
+        rule_ids: Specific rules to check
+
+    Returns:
+        Job result dictionary
+    """
+    return asyncio.run(_async_analyze_compliance(scan_id, repo_id, rule_ids))
+
+
+# Worker entry point
+if __name__ == "__main__":
+    from rq import Worker
+
+    logger.info("Starting RQ worker...")
+
+    worker = Worker(
+        queues=[job_queue.queue],
+        connection=job_queue.sync_redis,
+        log_job_description=True,
+    )
+
+    worker.work(with_scheduler=True)
