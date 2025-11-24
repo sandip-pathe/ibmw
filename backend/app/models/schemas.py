@@ -159,11 +159,7 @@ class FullScanRequest(BaseModel):
     rule_ids: Optional[list[str]] = None  # If None, scan all rules
 
 
-# Regulation Processing
-class RegulationChunkResponse(BaseModel):
-
-class UploadRegulationRequest(BaseModel):
-
+# ...existing code...
 # Flow Graph
 class FlowGraphNode(BaseModel):
     node_id: str

@@ -10,7 +10,7 @@ from app.config import get_settings
 from app.core.security import verify_admin_api_key
 from app.database import get_db
 from app.models.database import RegulationChunkQueries
-from app.models.schemas import HealthResponse, RegulationChunkResponse, SuccessResponse
+from app.models.schemas import HealthResponse, SuccessResponse
 from app.services.embeddings import embeddings_service
 from app.services.regulation_processor import regulation_processor
 from app.workers.queue import job_queue
@@ -111,7 +111,7 @@ async def list_regulations() -> list[str]:
 
 
 @router.get("/regulations/{rule_id}", dependencies=[Depends(verify_admin_api_key)])
-async def get_regulation_chunks(rule_id: str) -> list[RegulationChunkResponse]:
+async def get_regulation_chunks(rule_id: str) -> list:
     """Get all chunks for a specific regulation."""
     db = await get_db()
 

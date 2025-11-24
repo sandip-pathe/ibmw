@@ -9,8 +9,7 @@ from loguru import logger
 from app.core.security import verify_admin_api_key
 from app.database import get_db
 from app.models.database import (
-    CodeChunkQueries,
-    RegulationChunkQueries,
+    CodeMapQueries,
     RepositoryQueries,
     ScanQueries,
     ViolationQueries,
@@ -18,7 +17,7 @@ from app.models.database import (
 from app.models.schemas import (
     AnalyzeRuleRequest,
     AnalyzeRuleResponse,
-    CodeChunkResponse,
+    CodeMapResponse,
     FullScanRequest,
     ScanDetailResponse,
     ScanResponse,
