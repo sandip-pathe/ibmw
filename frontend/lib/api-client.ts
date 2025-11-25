@@ -1,5 +1,10 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+export interface User {
+  email: string;
+  user_id?: string;
+}
+
 export interface GitHubRepo {
   id: number;
   name: string;
@@ -95,6 +100,14 @@ export const apiClient = {
         avatar_url: string;
       };
     }>;
+  },
+
+  async getMe(token: string) {
+    const res = await fetch(`${API_URL}/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error("Failed to fetch user");
+    return res.json() as Promise<User>;
   },
 
   // Email/password signup

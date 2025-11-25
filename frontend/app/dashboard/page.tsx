@@ -49,8 +49,10 @@ function DashboardPage() {
   const handleConnectGitHub = async () => {
     setIsConnectingGitHub(true);
     try {
-      const redirectUri = `${window.location.origin}/auth/github/callback`;
-      const result = await apiClient.getGitHubAuthUrl(redirectUri);
+      const redirectUri = process.env.NEXT_PUBLIC_GITHUB_REDIRECT_URI;
+      console.log("Using redirect URI - dashboard:", redirectUri);
+      const result = await apiClient.getGitHubAuthUrl(redirectUri as string);
+      console.log("Redirecting to GitHub auth URL:", result.authorization_url);
       window.location.href = result.authorization_url;
     } catch (error) {
       console.error("Failed to get GitHub auth URL:", error);

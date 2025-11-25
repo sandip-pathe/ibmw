@@ -47,9 +47,11 @@ class Settings(BaseSettings):
     github_webhook_secret: str = Field(..., description="GitHub webhook secret")
     github_api_url: str = "https://api.github.com"
     
+    
     # GitHub OAuth App (for user repo access)
     github_oauth_client_id: str = Field(..., description="GitHub OAuth App Client ID")
     github_oauth_client_secret: str = Field(..., description="GitHub OAuth App Client Secret")
+    github_oauth_redirect_uri: str = Field(..., description="GitHub OAuth App Redirect URI")
 
     # Azure OpenAI
     azure_openai_endpoint: Optional[str] = None

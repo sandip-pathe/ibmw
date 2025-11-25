@@ -48,14 +48,14 @@ async def get_github_authorization_url(request: GitHubAuthUrlRequest):
     
     Frontend redirects user to this URL to authorize the app.
     """
+    from app.config import get_settings
+    settings = get_settings()
     try:
         auth_url = github_oauth.get_authorization_url(
-            redirect_uri=request.redirect_uri,
-            state=request.state
+            redirect_uri=settings.github_oauth_redirect_uri,
+            state=request.state if request.state is not None else ""
         )
-        
         return {"authorization_url": auth_url}
-    
     except Exception as e:
         logger.error(f"Failed to generate auth URL: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -68,20 +68,19 @@ async def github_oauth_callback(request: GitHubAuthRequest):
     
     Frontend calls this after user authorizes on GitHub.
     """
+    from app.config import get_settings
+    settings = get_settings()
     try:
         # Exchange code for token
         token_response = await github_oauth.exchange_code_for_token(
             code=request.code,
-            redirect_uri=request.redirect_uri
+            redirect_uri=settings.github_oauth_redirect_uri
         )
-        
         access_token = token_response.get("access_token")
         if not access_token:
             raise HTTPException(status_code=400, detail="No access token received")
-        
         # Get user info
         user_info = await github_oauth.get_user_info(access_token)
-        
         return {
             "access_token": access_token,
             "user": {
@@ -92,7 +91,6 @@ async def github_oauth_callback(request: GitHubAuthRequest):
                 "avatar_url": user_info.get("avatar_url"),
             }
         }
-    
     except Exception as e:
         logger.error(f"GitHub OAuth callback failed: {e}")
         raise HTTPException(status_code=400, detail=str(e))

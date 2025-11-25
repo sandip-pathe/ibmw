@@ -29,9 +29,11 @@ async def lifespan(app: FastAPI):
     await job_queue.connect_async()
 
     # Start RSS Scheduler only if enabled
+    scheduler_started = False
     if getattr(settings, "enable_rss_scraper", False):
         scheduler.add_job(rss_agent.run_scrape_cycle, 'interval', minutes=5)
         scheduler.start()
+        scheduler_started = True
         logger.info("RSS Scraper Scheduler started (5 min interval)")
 
     # Optional: Initialize Sentry
@@ -49,7 +51,8 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down application")
     await db.disconnect()
     await job_queue.disconnect_async()
-    scheduler.shutdown()
+    if scheduler_started:
+        scheduler.shutdown()
     logger.info("Application shutdown complete")
 
 app = FastAPI(

@@ -1,8 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { useStackApp } from "@stackframe/stack";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,9 +20,6 @@ interface IndexedRepo {
 
 export default function ReposStatusPage() {
   const router = useRouter();
-  const app = useStackApp();
-  const user = app.useUser();
-  const isAuthenticated = !!user;
   const [repos] = useState<IndexedRepo[]>([
     { id: 1, full_name: "user/repo1", status: "completed" },
     { id: 2, full_name: "user/repo2", status: "indexing" },
@@ -32,10 +27,11 @@ export default function ReposStatusPage() {
   ]);
 
   useEffect(() => {
-    if (typeof window !== "undefined" && !isAuthenticated) {
+    const token = localStorage.getItem("github_access_token");
+    if (!token) {
       router.push("/handler/sign-in");
     }
-  }, [router, isAuthenticated]);
+  }, [router]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -98,13 +94,6 @@ export default function ReposStatusPage() {
             <div className="flex items-center gap-2">
               <Shield className="h-6 w-6 text-blue-600" />
               <span className="font-bold text-xl">Indexing Status</span>
-              {isAuthenticated && (
-                <Link href="/handler/sign-out">
-                  <Button variant="ghost" className="ml-4">
-                    Sign Out
-                  </Button>
-                </Link>
-              )}
             </div>
           </div>
         </div>
