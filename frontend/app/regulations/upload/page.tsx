@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { useStackApp } from "@stackframe/stack";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { apiClient } from "@/lib/api-client";
@@ -13,7 +15,11 @@ import {
 } from "lucide-react";
 
 function UploadRegulationPage() {
+  // ...existing code...
   const router = useRouter();
+  const app = useStackApp();
+  const user = app.useUser();
+  const isAuthenticated = !!user;
   const [isUploading, setIsUploading] = useState(false);
   const [status, setStatus] = useState<{
     type: "success" | "error";
@@ -49,7 +55,7 @@ function UploadRegulationPage() {
   return (
     <div className="min-h-screen bg-black text-gray-100">
       <nav className="border-b border-[#333]">
-        <div className="container mx-auto px-6 py-4">
+        <div className="container mx-auto px-6 py-4 flex justify-between items-center">
           <Button
             variant="ghost"
             size="sm"
@@ -58,6 +64,13 @@ function UploadRegulationPage() {
           >
             <ArrowLeft className="h-4 w-4" /> Back to Dashboard
           </Button>
+          {isAuthenticated && (
+            <Link href="/handler/sign-out">
+              <Button variant="ghost" className="ml-4">
+                Sign Out
+              </Button>
+            </Link>
+          )}
         </div>
       </nav>
 
