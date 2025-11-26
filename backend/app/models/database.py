@@ -2,7 +2,7 @@
 Database model helpers and query builders.
 """
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Optional, List
 from uuid import UUID
 
 from asyncpg import Record
@@ -135,7 +135,6 @@ class RepositoryQueries:
             WHERE repo_id = $1
         """
         await conn.execute(query, repo_id, commit_sha, file_count, chunk_count)
-
 
 
 class CodeMapQueries:
@@ -411,6 +410,42 @@ class ScanQueries:
         record = await conn.fetchrow(query, scan_id)
         return record_to_dict(record)
 
+class WebhookEventQueries:
+    """SQL queries for webhook_events table."""
+
+    @staticmethod
+    async def insert(conn, event_id: str, event_type: str, payload: dict[str, Any]) -> None:
+        """Insert webhook event for idempotency."""
+        query = """
+            INSERT INTO webhook_events (
+                event_id, event_type, installation_id, repository_id, payload
+            ) VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (event_id) DO NOTHING
+        """
+        await conn.execute(
+            query,
+            event_id,
+            event_type,
+            payload.get("installation", {}).get("id"),
+            payload.get("repository", {}).get("id"),
+            payload,
+        )
+
+    @staticmethod
+    async def is_processed(conn, event_id: str) -> bool:
+        """Check if event was already processed."""
+        query = "SELECT processed FROM webhook_events WHERE event_id = $1"
+        result = await conn.fetchval(query, event_id)
+        return result is True
+
+    @staticmethod
+    async def mark_processed(conn, event_id: str) -> None:
+        """Mark event as processed."""
+        query = """
+            UPDATE webhook_events SET processed = true, processed_at = NOW()
+            WHERE event_id = $1
+        """
+        await conn.execute(query, event_id)
 
 class ViolationQueries:
     """SQL queries for violations table."""
@@ -418,12 +453,14 @@ class ViolationQueries:
     @staticmethod
     async def insert_batch(conn, violations: list[dict[str, Any]]) -> int:
         """Batch insert violations."""
+        # Added status default
         query = """
             INSERT INTO violations (
                 scan_id, rule_id, code_chunk_id, regulation_chunk_id,
                 verdict, severity, severity_score, explanation,
-                evidence, remediation, file_path, start_line, end_line, metadata
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                evidence, remediation, file_path, start_line, end_line, 
+                metadata, status
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'pending')
         """
         async with conn.transaction():
             await conn.executemany(
@@ -471,40 +508,47 @@ class ViolationQueries:
             records = await conn.fetch(query, scan_id)
         return records_to_list(records)
 
-
-class WebhookEventQueries:
-    """SQL queries for webhook_events table."""
-
     @staticmethod
-    async def insert(conn, event_id: str, event_type: str, payload: dict[str, Any]) -> None:
-        """Insert webhook event for idempotency."""
+    async def get_pending(conn, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
+        """Get pending violations across all scans."""
         query = """
-            INSERT INTO webhook_events (
-                event_id, event_type, installation_id, repository_id, payload
-            ) VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (event_id) DO NOTHING
+            SELECT v.*, r.full_name as repo_name
+            FROM violations v
+            JOIN scans s ON v.scan_id = s.scan_id
+            JOIN repos r ON s.repo_id = r.repo_id
+            WHERE v.status = 'pending'
+            ORDER BY v.severity_score DESC, v.created_at DESC
+            LIMIT $1 OFFSET $2
         """
-        await conn.execute(
-            query,
-            event_id,
-            event_type,
-            payload.get("installation", {}).get("id"),
-            payload.get("repository", {}).get("id"),
-            payload,
-        )
+        records = await conn.fetch(query, limit, offset)
+        return records_to_list(records)
 
     @staticmethod
-    async def is_processed(conn, event_id: str) -> bool:
-        """Check if event was already processed."""
-        query = "SELECT processed FROM webhook_events WHERE event_id = $1"
-        result = await conn.fetchval(query, event_id)
-        return result is True
-
-    @staticmethod
-    async def mark_processed(conn, event_id: str) -> None:
-        """Mark event as processed."""
+    async def update_status(
+        conn, 
+        violation_id: UUID, 
+        status: str, 
+        note: Optional[str], 
+        user_id: Optional[str]
+    ) -> Optional[dict[str, Any]]:
+        """Update violation status."""
         query = """
-            UPDATE webhook_events SET processed = true, processed_at = NOW()
-            WHERE event_id = $1
+            UPDATE violations SET
+                status = $2,
+                reviewer_note = $3,
+                reviewed_by = $4,
+                reviewed_at = NOW()
+            WHERE violation_id = $1
+            RETURNING *
         """
-        await conn.execute(query, event_id)
+        record = await conn.fetchrow(query, violation_id, status, note, user_id)
+        return record_to_dict(record)
+
+    @staticmethod
+    async def update_jira_ticket(conn, violation_id: UUID, ticket_id: str) -> None:
+        """Link Jira ticket to violation."""
+        query = """
+            UPDATE violations SET jira_ticket_id = $2
+            WHERE violation_id = $1
+        """
+        await conn.execute(query, violation_id, ticket_id)

@@ -2,15 +2,16 @@
 Pydantic schemas for API request/response models.
 """
 from datetime import datetime
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, List
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 
+# --- EXISTING SCHEMAS (Retained) ---
+
 # GitHub Webhook Payloads
 class GitHubRepository(BaseModel):
-    """GitHub repository model."""
     id: int
     name: str
     full_name: str
@@ -18,9 +19,7 @@ class GitHubRepository(BaseModel):
     clone_url: str
     default_branch: str = "main"
 
-
 class GitHubInstallation(BaseModel):
-    """GitHub installation model."""
     id: int
     account: dict[str, Any]
     app_id: int
@@ -28,16 +27,12 @@ class GitHubInstallation(BaseModel):
     permissions: dict[str, str]
     events: list[str]
 
-
 class WebhookInstallationEvent(BaseModel):
-    """Installation webhook event."""
     action: Literal["created", "deleted", "suspend", "unsuspend"]
     installation: GitHubInstallation
     repositories: Optional[list[GitHubRepository]] = None
 
-
 class WebhookPushEvent(BaseModel):
-    """Push webhook event."""
     ref: str
     before: str
     after: str
@@ -45,10 +40,7 @@ class WebhookPushEvent(BaseModel):
     installation: dict[str, Any]
     commits: list[dict[str, Any]]
 
-
-# Installation Responses
 class InstallationResponse(BaseModel):
-    """Installation API response."""
     installation_id: int
     account_login: str
     account_id: int
@@ -57,11 +49,9 @@ class InstallationResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-
 class RepositoryResponse(BaseModel):
-    """Repository API response."""
     repo_id: UUID
-    installation_id: int
+    installation_id: Optional[int]
     github_id: int
     repo_name: str
     full_name: str
@@ -73,11 +63,7 @@ class RepositoryResponse(BaseModel):
     total_chunks: int
     created_at: datetime
 
-
-# Code Analysis
-
 class CodeMapResponse(BaseModel):
-    """Code map chunk response."""
     chunk_id: UUID
     file_path: str
     language: str
@@ -94,9 +80,10 @@ class CodeMapResponse(BaseModel):
     delta_type: Optional[str] = None
     similarity_score: Optional[float] = None
 
+# --- UPDATED VIOLATION SCHEMAS ---
 
 class ViolationResponse(BaseModel):
-    """Violation response."""
+    """Violation response including review status."""
     violation_id: UUID
     rule_id: str
     verdict: Literal["compliant", "non_compliant", "partial", "unknown"]
@@ -108,11 +95,33 @@ class ViolationResponse(BaseModel):
     file_path: str
     start_line: int
     end_line: int
+    
+    # New fields
+    status: Literal["pending", "approved", "rejected", "ignored"]
+    reviewer_note: Optional[str] = None
+    jira_ticket_id: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
+    reviewed_by: Optional[str] = None
+    
     created_at: datetime
 
+class ViolationUpdate(BaseModel):
+    """Request model for updating a violation."""
+    status: Literal["pending", "approved", "rejected", "ignored"]
+    note: Optional[str] = None
+
+class JiraSyncRequest(BaseModel):
+    violation_id: UUID
+    project_key: str = "COMP" # Default project key
+    issue_type: str = "Bug"
+
+class JiraSyncResponse(BaseModel):
+    ticket_id: str
+    ticket_url: str
+
+# --- EXISTING SCAN SCHEMAS (Retained) ---
 
 class ScanResponse(BaseModel):
-    """Scan response."""
     scan_id: UUID
     repo_id: UUID
     scan_type: str
@@ -126,41 +135,28 @@ class ScanResponse(BaseModel):
     completed_at: Optional[datetime] = None
     created_at: datetime
 
-
 class ScanDetailResponse(ScanResponse):
-    """Detailed scan response with violations."""
     violations: list[ViolationResponse] = []
 
-
-# Analysis Requests
 class AnalyzeRuleRequest(BaseModel):
-    """Request to analyze code against a specific rule."""
     rule_text: str = Field(..., description="Natural language compliance rule")
     repo_id: UUID = Field(..., description="Repository to analyze")
     top_k: int = Field(default=10, ge=1, le=50, description="Number of similar chunks")
     severity_threshold: Optional[Literal["critical", "high", "medium", "low"]] = None
 
-
-
 class AnalyzeRuleResponse(BaseModel):
-    """Response for rule analysis."""
     rule_text: str
     repo_id: UUID
     matched_chunks: list[CodeMapResponse]
     violations: list[ViolationResponse]
     summary: str
 
-
 class FullScanRequest(BaseModel):
-    """Request for full repository scan."""
     repo_id: UUID
     initiator: Optional[str] = None
     commit_sha: Optional[str] = None
-    rule_ids: Optional[list[str]] = None  # If None, scan all rules
+    rule_ids: Optional[list[str]] = None
 
-
-# ...existing code...
-# Flow Graph
 class FlowGraphNode(BaseModel):
     node_id: str
     file_path: str
@@ -174,7 +170,6 @@ class FlowGraphResponse(BaseModel):
     nodes: list[FlowGraphNode]
     created_at: datetime
 
-# Compliance Evidence
 class ComplianceEvidenceResponse(BaseModel):
     id: UUID
     repo_id: UUID
@@ -185,10 +180,7 @@ class ComplianceEvidenceResponse(BaseModel):
     line_number: int
     created_at: datetime
 
-
-# Job Status
 class JobStatusResponse(BaseModel):
-    """Job status response."""
     job_id: str
     job_type: str
     status: Literal["queued", "running", "completed", "failed"]
@@ -199,32 +191,17 @@ class JobStatusResponse(BaseModel):
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
 
-
-# Health Check
 class HealthResponse(BaseModel):
-    """Health check response."""
     status: Literal["healthy", "degraded", "unhealthy"]
     version: str
     timestamp: datetime
-    services: dict[str, bool] = Field(
-        default_factory=lambda: {
-            "database": False,
-            "redis": False,
-            "embeddings": False,
-            "llm": False,
-        }
-    )
+    services: dict[str, bool]
 
-
-# Generic Responses
 class ErrorResponse(BaseModel):
-    """Generic error response."""
     error: str
     detail: Optional[str] = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
-
 class SuccessResponse(BaseModel):
-    """Generic success response."""
     message: str
     data: Optional[dict[str, Any]] = None

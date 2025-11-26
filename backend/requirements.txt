@@ -64,3 +64,8 @@ apscheduler==3.10.4
 pypdf==4.0.1
 python-jose
 email-validator
+
+langchain>=0.1.0
+langchain-openai>=0.0.8
+langchain-community>=0.0.21
+langgraph>=0.0.30

@@ -1,4 +1,3 @@
-
 """
 FastAPI application entry point.
 """
@@ -11,7 +10,17 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from app.api import admin, analysis, installations, webhooks, user_repos, auth, regulations
+from app.api import (
+    admin, 
+    analysis, 
+    installations, 
+    webhooks, 
+    user_repos, 
+    auth, 
+    regulations,
+    violations,   # New
+    integrations  # New
+)
 from app.config import get_settings
 from app.database import db
 from app.services.rss_scraper import rss_agent
@@ -116,6 +125,8 @@ app.include_router(analysis.router)
 app.include_router(admin.router)
 app.include_router(user_repos.router)
 app.include_router(regulations.router)
+app.include_router(violations.router)    # New
+app.include_router(integrations.router)  # New
 
 # Root endpoint
 @app.get("/")

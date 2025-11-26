@@ -34,7 +34,8 @@ class JobQueue:
     async def connect_async(self) -> None:
         """Connect async Redis client."""
         if self.async_redis is None:
-            self.async_redis = await aioredis.from_url(
+            import redis.asyncio
+            self.async_redis = redis.asyncio.Redis.from_url(
                 self.redis_url,
                 encoding="utf-8",
                 decode_responses=True,

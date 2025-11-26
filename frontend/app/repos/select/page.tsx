@@ -3,10 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Skeleton } from "@/components/ui/skeleton";
-import { apiClient, type GitHubRepo } from "@/lib/api-client";
-import { Github, Loader2, Search, Lock, Globe, ArrowLeft } from "lucide-react";
+import { apiClient } from "@/lib/api-client";
+import { Loader2, Search, Lock, ArrowLeft, CheckCircle2 } from "lucide-react";
+import { GitHubRepo } from "@/lib/types";
 
 function SelectReposPage() {
   const router = useRouter();
@@ -23,7 +22,7 @@ function SelectReposPage() {
     const loadRepos = async () => {
       const token = localStorage.getItem("github_access_token");
       if (!token) {
-        router.push("/handler/sign-in");
+        router.push("/auth/signin"); // Fixed route
         return;
       }
 
@@ -33,7 +32,9 @@ function SelectReposPage() {
         setRepos(result.repos);
       } catch (err) {
         console.error("Failed to load repos:", err);
-        setError("Failed to load repositories. Please try again.");
+        setError(
+          "Failed to load repositories. Please check your GitHub connection."
+        );
       } finally {
         setIsLoading(false);
       }
@@ -42,6 +43,7 @@ function SelectReposPage() {
     loadRepos();
   }, [router]);
 
+  // ... [Helper functions same as before] ...
   const handleToggleRepo = (repoId: number) => {
     const newSelected = new Set(selectedRepoIds);
     if (newSelected.has(repoId)) {
@@ -50,17 +52,6 @@ function SelectReposPage() {
       newSelected.add(repoId);
     }
     setSelectedRepoIds(newSelected);
-  };
-
-  const handleSelectAll = () => {
-    const filteredRepos = repos.filter((repo) =>
-      repo.full_name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-    if (selectedRepoIds.size === filteredRepos.length) {
-      setSelectedRepoIds(new Set());
-    } else {
-      setSelectedRepoIds(new Set(filteredRepos.map((r) => r.id)));
-    }
   };
 
   const handleIndexRepos = async () => {
@@ -72,6 +63,8 @@ function SelectReposPage() {
     try {
       setIsIndexing(true);
       await apiClient.indexRepositories(token, Array.from(selectedRepoIds));
+
+      // Redirect to status page, passing the first repo ID as an example or just general status
       router.push("/repos/status");
     } catch (err) {
       console.error("Failed to index repos:", err);
@@ -86,7 +79,7 @@ function SelectReposPage() {
   );
 
   return (
-    <div className="min-h-screen bg-black">
+    <div className="min-h-screen bg-black text-gray-100">
       {/* Navigation */}
       <nav className="border-b border-[#333]">
         <div className="container mx-auto px-6 py-4 flex justify-between items-center">
@@ -99,160 +92,109 @@ function SelectReposPage() {
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
-            <div className="flex items-center gap-3">
-              <div className="w-6 h-6 flex items-center">
-                <svg viewBox="0 0 76 65" fill="white">
-                  <path d="M37.5274 0L75.0548 65H0L37.5274 0Z" />
-                </svg>
-              </div>
-              <span className="text-white font-semibold text-lg">
-                Select Repositories
-              </span>
-            </div>
+            <h1 className="text-xl font-semibold text-white">
+              Import Repositories
+            </h1>
           </div>
-          <Button
-            onClick={handleIndexRepos}
-            disabled={selectedRepoIds.size === 0 || isIndexing}
-            className="bg-white text-black hover:bg-gray-200 h-10 px-5 font-medium gap-2"
-          >
-            {isIndexing ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Indexing...
-              </>
-            ) : (
-              <>
-                Index {selectedRepoIds.size}{" "}
-                {selectedRepoIds.size === 1 ? "Repository" : "Repositories"}
-              </>
-            )}
-          </Button>
         </div>
       </nav>
 
-      <main className="container mx-auto px-4 py-8">
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-md mb-6">
-            {error}
+      <main className="container mx-auto px-6 py-8 max-w-4xl">
+        {/* Search Box */}
+        <div className="mb-6">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-500" />
+            <input
+              type="text"
+              placeholder="Search your repositories..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 bg-[#111] border border-[#333] rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600/50 transition-all"
+            />
           </div>
-        )}
-
-        {/* Search and Select All */}
-        <div className="bg-[#111] border border-[#333] rounded-lg p-6 mb-6">
-          <div className="flex items-center gap-4 mb-4">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-500" />
-              <input
-                type="text"
-                placeholder="Search repositories..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-black border border-[#333] rounded-md text-white placeholder-gray-500 focus:outline-none focus:border-white"
-              />
-            </div>
-            <Button
-              variant="outline"
-              onClick={handleSelectAll}
-              disabled={isLoading || filteredRepos.length === 0}
-              className="border-[#333] text-white hover:bg-[#1a1a1a] hover:text-white"
-            >
-              {selectedRepoIds.size === filteredRepos.length
-                ? "Deselect All"
-                : "Select All"}
-            </Button>
-          </div>
-          <p className="text-sm text-gray-400">
-            Found {filteredRepos.length}{" "}
-            {filteredRepos.length === 1 ? "repository" : "repositories"}
-            {selectedRepoIds.size > 0 && ` • ${selectedRepoIds.size} selected`}
-          </p>
         </div>
 
-        {/* Repository List */}
-        <div className="space-y-3">
-          {isLoading ? (
-            Array.from({ length: 5 }).map((_, i) => (
-              <div
-                key={i}
-                className="bg-[#0b0b0b] border border-[#1a1a1a] rounded-lg p-6"
-              >
-                <div className="flex items-start gap-4">
-                  <Skeleton className="h-5 w-5 rounded" />
-                  <div className="flex-1 space-y-2">
-                    <Skeleton className="h-5 w-2/3" />
-                    <Skeleton className="h-4 w-full" />
-                  </div>
-                </div>
+        {/* List */}
+        <div className="bg-[#111] border border-[#333] rounded-xl overflow-hidden">
+          <div className="p-4 border-b border-[#333] bg-[#161616] flex justify-between items-center">
+            <span className="text-sm text-gray-400">
+              {filteredRepos.length} Repositories
+            </span>
+            <span className="text-sm text-blue-400 font-medium">
+              {selectedRepoIds.size} Selected
+            </span>
+          </div>
+
+          <div className="divide-y divide-[#222] max-h-[60vh] overflow-y-auto">
+            {isLoading ? (
+              <div className="p-8 text-center text-gray-500">
+                Loading repositories...
               </div>
-            ))
-          ) : filteredRepos.length === 0 ? (
-            <div className="bg-[#0b0b0b] border border-[#1a1a1a] rounded-lg p-12 text-center">
-              <Github className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-white mb-2">
-                No repositories found
-              </h3>
-              <p className="text-gray-400">
-                {searchQuery
-                  ? "Try a different search term"
-                  : "No repositories available"}
-              </p>
-            </div>
-          ) : (
-            filteredRepos.map((repo) => (
-              <div
-                key={repo.id}
-                className={`bg-white rounded-lg shadow-sm p-6 border-2 transition-colors cursor-pointer hover:border-blue-200 ${
-                  selectedRepoIds.has(repo.id)
-                    ? "border-blue-500"
-                    : "border-transparent"
-                }`}
-                onClick={() => handleToggleRepo(repo.id)}
-              >
-                <div className="flex items-start gap-4">
-                  <Checkbox
-                    checked={selectedRepoIds.has(repo.id)}
-                    onCheckedChange={() => handleToggleRepo(repo.id)}
-                    className="mt-1"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-2">
-                      <h3 className="font-semibold text-lg truncate text-white">
-                        {repo.full_name}
-                      </h3>
-                      {repo.private ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-yellow-500/10 text-yellow-500 text-xs rounded-full border border-yellow-500/20">
-                          <Lock className="h-3 w-3" />
-                          Private
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-500/10 text-green-500 text-xs rounded-full border border-green-500/20">
-                          <Globe className="h-3 w-3" />
-                          Public
-                        </span>
-                      )}
-                      {repo.language && (
-                        <span className="px-2 py-1 bg-[#1a1a1a] text-gray-400 text-xs rounded-full border border-[#333]">
-                          {repo.language}
-                        </span>
-                      )}
-                    </div>
-                    {repo.description && (
-                      <p className="text-gray-400 text-sm mb-2">
-                        {repo.description}
-                      </p>
+            ) : filteredRepos.length === 0 ? (
+              <div className="p-8 text-center text-gray-500">
+                No repositories found.
+              </div>
+            ) : (
+              filteredRepos.map((repo) => (
+                <div
+                  key={repo.id}
+                  onClick={() => handleToggleRepo(repo.id)}
+                  className={`p-4 flex items-center gap-4 hover:bg-[#1a1a1a] cursor-pointer transition-colors ${
+                    selectedRepoIds.has(repo.id) ? "bg-blue-900/10" : ""
+                  }`}
+                >
+                  <div
+                    className={`h-5 w-5 rounded border flex items-center justify-center transition-colors ${
+                      selectedRepoIds.has(repo.id)
+                        ? "bg-blue-600 border-blue-600"
+                        : "border-gray-600"
+                    }`}
+                  >
+                    {selectedRepoIds.has(repo.id) && (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-white" />
                     )}
-                    <div className="flex items-center gap-4 text-xs text-gray-500">
-                      <span>
-                        Updated {new Date(repo.updated_at).toLocaleDateString()}
+                  </div>
+
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-white">
+                        {repo.full_name}
                       </span>
-                      <span>•</span>
-                      <span>Branch: {repo.default_branch}</span>
+                      {repo.private && (
+                        <Lock className="h-3 w-3 text-yellow-500" />
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-0.5 flex gap-3">
+                      {repo.language && <span>{repo.language}</span>}
+                      <span>
+                        Last updated:{" "}
+                        {new Date(repo.updated_at).toLocaleDateString()}
+                      </span>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))
-          )}
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Footer Action */}
+        <div className="fixed bottom-0 left-0 right-0 bg-[#0a0a0a] border-t border-[#222] p-4 flex justify-end container mx-auto max-w-4xl">
+          <Button
+            size="lg"
+            onClick={handleIndexRepos}
+            disabled={selectedRepoIds.size === 0 || isIndexing}
+            className="bg-white text-black hover:bg-gray-200 min-w-[150px]"
+          >
+            {isIndexing ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                Indexing...
+              </>
+            ) : (
+              `Import ${selectedRepoIds.size} Repositories`
+            )}
+          </Button>
         </div>
       </main>
     </div>

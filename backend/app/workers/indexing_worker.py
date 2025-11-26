@@ -1,3 +1,34 @@
+"""
+RQ worker for background indexing and analysis jobs.
+"""
+import asyncio
+import subprocess
+import tempfile
+from pathlib import Path
+from typing import Optional
+from uuid import UUID
+
+from loguru import logger
+
+from app.config import get_settings
+from app.core.github_client import github_client
+from app.database import db
+from app.models.database import (
+    CodeChunkQueries,
+    RegulationChunkQueries,
+    RepositoryQueries,
+    ScanQueries,
+    ViolationQueries,
+)
+from app.services.chunker import code_chunker
+from app.services.embeddings import embeddings_service
+from app.services.llm import llm_service
+from app.workers.queue import job_queue
+from app.services.agents import AgentLogger 
+
+settings = get_settings()
+
+
 async def reindex_changed_files(repo_id: str, installation_id: int, full_name: str, commit_sha: str, changed_files: list):
     """
     Re-chunk, re-embed, and update only changed files in vector DB.
@@ -36,34 +67,6 @@ async def reindex_changed_files(repo_id: str, installation_id: int, full_name: s
     finally:
         import shutil
         shutil.rmtree(temp_dir, ignore_errors=True)
-"""
-RQ worker for background indexing and analysis jobs.
-"""
-import asyncio
-import subprocess
-import tempfile
-from pathlib import Path
-from typing import Optional
-from uuid import UUID
-
-from loguru import logger
-
-from app.config import get_settings
-from app.core.github_client import github_client
-from app.database import db
-from app.models.database import (
-    CodeChunkQueries,
-    RegulationChunkQueries,
-    RepositoryQueries,
-    ScanQueries,
-    ViolationQueries,
-)
-from app.services.chunker import code_chunker
-from app.services.embeddings import embeddings_service
-from app.services.llm import llm_service
-from app.workers.queue import job_queue
-
-settings = get_settings()
 
 
 async def _async_index_repository(
@@ -240,55 +243,69 @@ def index_repository(
 async def _async_analyze_compliance(
     scan_id: str, repo_id: str, rule_ids: Optional[list[str]]
 ) -> dict:
-    """Async implementation of compliance analysis."""
+    """Async implementation of compliance analysis with Agent Logging."""
     scan_uuid = UUID(scan_id)
     repo_uuid = UUID(repo_id)
+    
+    # Initialize Agent Logger
+    agent = AgentLogger(scan_id)
 
-    logger.info(f"Starting compliance analysis for scan {scan_id}")
+    await agent.log("PLANNER", f"Starting compliance analysis for scan {scan_id}")
 
     try:
         await db.connect()
         await job_queue.connect_async()
 
         async with db.acquire() as conn:
-            # Get all regulation chunks (or filter by rule_ids)
+            # Step 1: Plan
+            await agent.log("PLANNER", "Identifying relevant regulations...")
             if rule_ids:
                 regulation_chunks = []
                 for rule_id in rule_ids:
                     chunks = await RegulationChunkQueries.get_by_rule_id(conn, rule_id)
                     regulation_chunks.extend(chunks)
+                await agent.log("PLANNER", f"Scoped to {len(rule_ids)} specific rules.")
             else:
-                # Get all rules
                 all_rule_ids = await RegulationChunkQueries.list_all_rules(conn)
                 regulation_chunks = []
                 for rule_id in all_rule_ids:
                     chunks = await RegulationChunkQueries.get_by_rule_id(conn, rule_id)
                     regulation_chunks.extend(chunks)
-
-            logger.info(f"Analyzing against {len(regulation_chunks)} regulation chunks")
+                await agent.log("PLANNER", f"Full scan loaded {len(regulation_chunks)} regulation clauses.")
 
             violations = []
 
-            # For each regulation chunk, find similar code chunks
+            # Step 2: Scout (Vector Search)
             for reg_chunk in regulation_chunks:
+                rule_id = reg_chunk["rule_id"]
+                
                 if not reg_chunk.get("embedding"):
-                    logger.warning(f"Regulation chunk {reg_chunk['chunk_id']} has no embedding")
                     continue
 
+                await agent.log("NAVIGATOR", f"Searching codebase for Rule {rule_id} context...")
+                
                 # Vector similarity search
                 similar_chunks = await CodeChunkQueries.search_similar(
                     conn,
                     reg_chunk["embedding"],
                     repo_uuid,
-                    top_k=settings.top_k_similar_chunks,
+                    top_k=5, # Reduced for demo speed
                 )
+                
+                if not similar_chunks:
+                    await agent.log("NAVIGATOR", f"No relevant code found for {rule_id}. Skipping.")
+                    continue
+                    
+                await agent.log("NAVIGATOR", f"Found {len(similar_chunks)} potential matches for {rule_id}.")
 
-                # Analyze each similar chunk with LLM
+                # Step 3: Investigate (LLM Analysis)
                 for code_chunk in similar_chunks:
                     # Skip if similarity too low
                     if code_chunk.get("distance", 1.0) > (1.0 - settings.similarity_threshold):
                         continue
 
+                    await agent.log("INVESTIGATOR", f"Analyzing {code_chunk['file_path']} against {rule_id}...")
+                    
                     try:
                         analysis = await llm_service.analyze_compliance(
                             rule_text=reg_chunk["chunk_text"],
@@ -299,8 +316,8 @@ async def _async_analyze_compliance(
                             language=code_chunk["language"],
                         )
 
-                        # Only store violations (non-compliant or partial)
                         if analysis["verdict"] in ["non_compliant", "partial"]:
+                            await agent.log("JUDGE", f"VIOLATION DETECTED: {rule_id} in {code_chunk['file_path']}")
                             violations.append(
                                 {
                                     "scan_id": scan_uuid,
@@ -318,15 +335,23 @@ async def _async_analyze_compliance(
                                     "end_line": code_chunk["end_line"],
                                 }
                             )
+                        else:
+                            # Optional: Log compliance
+                            # await agent.log("JUDGE", f"Compliant: {code_chunk['file_path']}")
+                            pass
 
                     except Exception as e:
                         logger.warning(f"Failed to analyze chunk: {e}")
+                        await agent.log("INVESTIGATOR", f"Analysis error: {str(e)}")
 
-            # Insert violations
+            # Step 4: Finalize
             if violations:
+                await agent.log("JUDGE", f"Committing {len(violations)} violations to database...")
                 await ViolationQueries.insert_batch(conn, violations)
+            else:
+                await agent.log("JUDGE", "No violations found. Codebase is compliant.")
 
-            # Update scan status and counts
+            # Update scan status
             await ScanQueries.update_violation_counts(conn, scan_uuid)
             await ScanQueries.update_status(
                 conn,
@@ -335,7 +360,7 @@ async def _async_analyze_compliance(
                 {"violations_found": len(violations)},
             )
 
-            logger.info(f"Compliance analysis completed: {len(violations)} violations found")
+            await agent.log("PLANNER", "Scan completed successfully.")
 
             return {
                 "status": "success",
@@ -345,6 +370,7 @@ async def _async_analyze_compliance(
 
     except Exception as e:
         logger.error(f"Compliance analysis failed: {e}")
+        await agent.log("PLANNER", f"CRITICAL ERROR: {str(e)}")
 
         async with db.acquire() as conn:
             await ScanQueries.update_status(conn, scan_uuid, "failed", error=str(e))
@@ -354,7 +380,6 @@ async def _async_analyze_compliance(
             "scan_id": scan_id,
             "error": str(e),
         }
-
 
 def analyze_compliance(
     scan_id: str, repo_id: str, rule_ids: Optional[list[str]] = None

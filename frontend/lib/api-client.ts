@@ -1,74 +1,14 @@
+import {
+  GitHubRepo,
+  IndexingStatus,
+  RegulationDoc,
+  ScanStatus,
+  ScrapeResult,
+  User,
+  Violation,
+} from "./types";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
-export interface User {
-  email: string;
-  user_id?: string;
-}
-
-export interface GitHubRepo {
-  id: number;
-  name: string;
-  full_name: string;
-  private: boolean;
-  owner: {
-    login: string;
-    avatar_url: string;
-  };
-  description: string | null;
-  html_url: string;
-  default_branch: string;
-  language: string | null;
-  updated_at: string;
-}
-
-export interface IndexingStatus {
-  repo_id: number;
-  full_name: string;
-  status: "pending" | "indexed";
-  chunks_count: number;
-  last_indexed: string | null;
-}
-
-// New Interfaces for Regulation Engine
-export interface RegulationDoc {
-  document_id: string;
-  title: string;
-  regulator: "RBI" | "SEBI";
-  doc_type: string;
-  publish_date: string;
-  status: "active" | "draft" | "archived";
-  source_url?: string;
-}
-
-export interface ScrapeResult {
-  new: number;
-  errors: number;
-  duplicates: number;
-}
-
-export interface GitHubRepo {
-  id: number;
-  name: string;
-  full_name: string;
-  private: boolean;
-  owner: {
-    login: string;
-    avatar_url: string;
-  };
-  description: string | null;
-  html_url: string;
-  default_branch: string;
-  language: string | null;
-  updated_at: string;
-}
-
-export interface IndexingStatus {
-  repo_id: number;
-  full_name: string;
-  status: "pending" | "indexed";
-  chunks_count: number;
-  last_indexed: string | null;
-}
 
 export const apiClient = {
   // Get GitHub OAuth authorization URL
@@ -199,6 +139,18 @@ export const apiClient = {
     return response.json() as Promise<{ message: string; data: ScrapeResult }>;
   },
 
+  // --- Scans & Agents ---
+
+  async getScanStatus(scanId: string, token: string) {
+    // In a real app, we'd have a specific endpoint for logs,
+    // but for now we might fetch scan details or generic status
+    const res = await fetch(`${API_URL}/analyze/scan/${scanId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error("Failed to fetch scan status");
+    return res.json() as Promise<ScanStatus>;
+  },
+
   // Get Review Queue (Drafts)
   // Note: using the admin regulations endpoint or a specific one if created
   async getReviewQueue(adminKey: string) {
@@ -210,5 +162,46 @@ export const apiClient = {
     });
     if (!response.ok) return []; // Return empty if endpoint not ready
     return response.json() as Promise<RegulationDoc[]>;
+  },
+
+  // --- Violations (Review Queue) ---
+
+  async getPendingViolations(token: string) {
+    const res = await fetch(`${API_URL}/violations/pending`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error("Failed to fetch violations");
+    return res.json() as Promise<Violation[]>;
+  },
+
+  async updateViolationStatus(
+    violationId: string,
+    status: "approved" | "rejected" | "ignored",
+    note: string,
+    token: string
+  ) {
+    const res = await fetch(`${API_URL}/violations/${violationId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ status, note }),
+    });
+    if (!res.ok) throw new Error("Failed to update violation");
+    return res.json() as Promise<Violation>;
+  },
+
+  async createJiraTicket(violationId: string, token: string) {
+    const res = await fetch(`${API_URL}/integrations/jira/sync`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ violation_id: violationId }),
+    });
+    if (!res.ok) throw new Error("Failed to create Jira ticket");
+    return res.json() as Promise<{ ticket_id: string; ticket_url: string }>;
   },
 };
