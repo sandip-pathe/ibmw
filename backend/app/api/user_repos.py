@@ -7,8 +7,9 @@ from loguru import logger
 from typing import Optional
 
 from app.core.github_oauth import github_oauth
-from app.core.security import verify_admin_api_key
 from app.database import get_db
+from app.core.security import verify_admin_api_key
+from app.api.auth import neon_query
 
 router = APIRouter(prefix="/user", tags=["User Repositories"])
 
@@ -41,32 +42,11 @@ class UserRepoResponse(BaseModel):
     updated_at: str
 
 
-@router.post("/auth/github/authorize")
-async def get_github_authorization_url(request: GitHubAuthUrlRequest):
-    """
-    Generate GitHub OAuth authorization URL.
-    
-    Frontend redirects user to this URL to authorize the app.
-    """
-    from app.config import get_settings
-    settings = get_settings()
-    try:
-        auth_url = github_oauth.get_authorization_url(
-            redirect_uri=settings.github_oauth_redirect_uri,
-            state=request.state if request.state is not None else ""
-        )
-        return {"authorization_url": auth_url}
-    except Exception as e:
-        logger.error(f"Failed to generate auth URL: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.post("/auth/github/callback")
 async def github_oauth_callback(request: GitHubAuthRequest):
     """
-    Exchange GitHub OAuth code for access token.
-    
-    Frontend calls this after user authorizes on GitHub.
+    Exchange GitHub OAuth code for access token and link to Stack Auth user.
     """
     from app.config import get_settings
     settings = get_settings()
@@ -81,13 +61,35 @@ async def github_oauth_callback(request: GitHubAuthRequest):
             raise HTTPException(status_code=400, detail="No access token received")
         # Get user info
         user_info = await github_oauth.get_user_info(access_token)
+        email = user_info.get("email")
+        # If email is missing, fetch from /user/emails
+        if not email:
+            import httpx
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    "https://api.github.com/user/emails",
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                        "Accept": "application/vnd.github.v3+json",
+                    },
+                )
+                if resp.status_code == 200:
+                    emails = resp.json()
+                    # Find primary and verified email
+                    primary_email = next((e["email"] for e in emails if e.get("primary") and e.get("verified")), None)
+                    email = primary_email or (emails[0]["email"] if emails else None)
+        if not email:
+            raise HTTPException(status_code=400, detail="GitHub user email not found")
+        # Update DB: store github_access_token for user
+        sql = "UPDATE users SET github_access_token = $1 WHERE email = $2"
+        neon_query(sql, [access_token, email])
         return {
             "access_token": access_token,
             "user": {
                 "id": user_info.get("id"),
                 "login": user_info.get("login"),
                 "name": user_info.get("name"),
-                "email": user_info.get("email"),
+                "email": email,
                 "avatar_url": user_info.get("avatar_url"),
             }
         }
@@ -96,26 +98,23 @@ async def github_oauth_callback(request: GitHubAuthRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+
+
 @router.get("/repos")
 async def list_user_repositories(
-    authorization: str = Header(..., description="Bearer {access_token}")
+    authorization: str = Header(None, description="Bearer {stack_auth_token or github_access_token}")
 ):
     """
     List all repositories accessible by the authenticated user.
-    
-    Requires: Authorization: Bearer {github_access_token}
+    In development, skips Stack Auth validation and uses GitHub token directly.
     """
+    from app.config import get_settings
+    settings = get_settings()
     try:
-        # Extract token from Bearer header
-        if not authorization.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Invalid authorization header")
-        
-        access_token = authorization.replace("Bearer ", "")
-        
-        # Fetch repos from GitHub
-        repos = await github_oauth.list_user_repos(access_token)
-        
-        # Format response
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
+        github_access_token = authorization.replace("Bearer ", "")
+        repos = await github_oauth.list_user_repos(github_access_token)
         formatted_repos = [
             UserRepoResponse(
                 id=repo["id"],
@@ -134,9 +133,7 @@ async def list_user_repositories(
             )
             for repo in repos
         ]
-        
         return {"repos": formatted_repos, "total": len(formatted_repos)}
-    
     except Exception as e:
         logger.error(f"Failed to list user repos: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -145,19 +142,20 @@ async def list_user_repositories(
 @router.post("/repos/index")
 async def index_selected_repositories(
     request: RepoSelectionRequest,
+    authorization: str = Header(..., description="Bearer {stack_auth_token}"),
     db=Depends(get_db)
 ):
     """
     Index selected repositories for compliance analysis.
-    
     This triggers the code parsing, embedding, and storage pipeline.
     """
     try:
-        access_token = request.access_token
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
+        github_access_token = authorization.replace("Bearer ", "")
         repo_ids = request.repo_ids
-        
         # Get full repo list to find selected ones
-        all_repos = await github_oauth.list_user_repos(access_token)
+        all_repos = await github_oauth.list_user_repos(github_access_token)
         selected_repos = [r for r in all_repos if r["id"] in repo_ids]
         
         if not selected_repos:
@@ -212,7 +210,7 @@ async def index_selected_repositories(
 @router.get("/repos/{repo_id}/status")
 async def get_repository_indexing_status(
     repo_id: int,
-    authorization: str = Header(..., description="Bearer {access_token}"),
+        authorization: str = Header(..., description="Bearer {stack_auth_token}"),
     db=Depends(get_db)
 ):
     """
@@ -232,10 +230,8 @@ async def get_repository_indexing_status(
                 """,
                 repo_id
             )
-            
             if not repo:
                 raise HTTPException(status_code=404, detail="Repository not found")
-            
             return {
                 "repo_id": repo["github_repo_id"],
                 "full_name": repo["full_name"],
@@ -243,7 +239,6 @@ async def get_repository_indexing_status(
                 "chunks_count": repo["chunks_count"],
                 "last_indexed": repo["last_indexed"],
             }
-    
     except Exception as e:
         logger.error(f"Failed to get repo status: {e}")
         raise HTTPException(status_code=500, detail=str(e))

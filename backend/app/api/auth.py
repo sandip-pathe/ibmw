@@ -4,9 +4,12 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, EmailStr
 from jose import jwt
 
-NEON_DATA_API_URL = os.getenv("NEON_DATA_API_URL")
-NEON_API_KEY = os.getenv("NEON_API_KEY")
-STACK_JWKS_URL = os.getenv("STACK_JWKS_URL")
+
+from app.config import get_settings
+settings = get_settings()
+NEON_DATA_API_URL = settings.neon_data_api_url
+NEON_API_KEY = settings.neon_api_key
+STACK_JWKS_URL = settings.stack_jwks_url
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -18,9 +21,50 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
+
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+# --- GitHub OAuth Callback ---
+from fastapi import Query
+
+
+from app.config import get_settings
+
+@router.get("/github/callback")
+def github_callback(code: str = Query(...), state: str = Query(None)):
+    """
+    Handles GitHub OAuth callback, exchanges code for access token.
+    """
+    settings = get_settings()
+    github_client_id = settings.github_oauth_client_id
+    github_client_secret = settings.github_oauth_client_secret
+    token_url = "https://github.com/login/oauth/access_token"
+    headers = {"Accept": "application/json"}
+    data = {
+        "client_id": github_client_id,
+        "client_secret": github_client_secret,
+        "code": code,
+        "state": state,
+    }
+    resp = requests.post(token_url, headers=headers, data=data)
+    if not resp.ok:
+        raise HTTPException(status_code=400, detail=f"GitHub token exchange failed: {resp.text}")
+    token_data = resp.json()
+    access_token = token_data.get("access_token")
+    if not access_token:
+        raise HTTPException(status_code=400, detail="No access token returned from GitHub")
+    # Optionally: fetch user info
+    user_resp = requests.get(
+        "https://api.github.com/user",
+        headers={"Authorization": f"token {access_token}"}
+    )
+    if not user_resp.ok:
+        raise HTTPException(status_code=400, detail="Failed to fetch GitHub user info")
+    user_data = user_resp.json()
+    return {"access_token": access_token, "user": user_data}
 
 def neon_query(sql: str, params=None):
     headers = {"Authorization": f"Bearer {NEON_API_KEY}", "Content-Type": "application/json"}

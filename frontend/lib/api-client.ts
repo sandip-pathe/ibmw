@@ -84,11 +84,15 @@ export const apiClient = {
 
   // Exchange GitHub OAuth code for token
   async exchangeGitHubCode(code: string, redirectUri: string) {
-    const response = await fetch(`${API_URL}/user/auth/github/callback`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code, redirect_uri: redirectUri }),
-    });
+    const response = await fetch(
+      `${API_URL}/auth/github/callback?code=${encodeURIComponent(
+        code
+      )}&redirect_uri=${encodeURIComponent(redirectUri)}`,
+      {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      }
+    );
     if (!response.ok) throw new Error("Failed to exchange code");
     return response.json() as Promise<{
       access_token: string;
@@ -132,9 +136,9 @@ export const apiClient = {
   },
 
   // List user's GitHub repositories
-  async listUserRepos(accessToken: string) {
+  async listUserRepos(stackAuthToken: string) {
     const response = await fetch(`${API_URL}/user/repos`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: { Authorization: `Bearer ${stackAuthToken}` },
     });
     if (!response.ok) throw new Error("Failed to list repos");
     return response.json() as Promise<{ repos: GitHubRepo[]; total: number }>;
@@ -144,8 +148,11 @@ export const apiClient = {
   async indexRepositories(accessToken: string, repoIds: number[]) {
     const response = await fetch(`${API_URL}/user/repos/index`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ access_token: accessToken, repo_ids: repoIds }),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ repo_ids: repoIds, access_token: accessToken }),
     });
     if (!response.ok) throw new Error("Failed to index repos");
     return response.json() as Promise<{
@@ -156,9 +163,9 @@ export const apiClient = {
   },
 
   // Get repository indexing status
-  async getRepoStatus(repoId: number, accessToken: string) {
+  async getRepoStatus(repoId: number, stackAuthToken: string) {
     const response = await fetch(`${API_URL}/user/repos/${repoId}/status`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: { Authorization: `Bearer ${stackAuthToken}` },
     });
     if (!response.ok) throw new Error("Failed to get repo status");
     return response.json() as Promise<IndexingStatus>;

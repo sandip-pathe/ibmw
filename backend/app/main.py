@@ -2,6 +2,7 @@
 """
 FastAPI application entry point.
 """
+from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -15,6 +16,8 @@ from app.config import get_settings
 from app.database import db
 from app.services.rss_scraper import rss_agent
 from app.workers.queue import job_queue
+
+load_dotenv()
 
 settings = get_settings()
 

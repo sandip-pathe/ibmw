@@ -32,22 +32,27 @@ class Settings(BaseSettings):
     app_name: str = "Fintech Compliance Engine"
     api_version: str = "v1"
 
+
     # Database
     database_url: str = Field(
         default_factory=lambda: os.getenv("DATABASE_URL", ""),
         description="Neon Postgres connection string (asyncpg or psycopg)"
     )
+    neon_data_api_url: str = Field(..., description="Neon Data API URL")
+    neon_api_key: str = Field(..., description="Neon API Key")
 
     # Redis
     redis_url: str = Field(default="redis://localhost:6379/0")
+
+    # Stack Auth
+    stack_jwks_url: str = Field(..., description="Stack JWKS URL")
 
     # GitHub App (for webhooks)
     github_app_id: int = Field(..., description="GitHub App ID")
     github_private_key_path: Path = Field(..., description="Path to GitHub App private key")
     github_webhook_secret: str = Field(..., description="GitHub webhook secret")
     github_api_url: str = "https://api.github.com"
-    
-    
+
     # GitHub OAuth App (for user repo access)
     github_oauth_client_id: str = Field(..., description="GitHub OAuth App Client ID")
     github_oauth_client_secret: str = Field(..., description="GitHub OAuth App Client Secret")

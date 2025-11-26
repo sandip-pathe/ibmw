@@ -31,10 +31,10 @@ export default function Home() {
               </>
             ) : (
               <>
-                <Link href="/handler/sign-in">
+                <Link href="/auth/signin">
                   <Button variant="ghost">Sign In</Button>
                 </Link>
-                <Link href="/handler/sign-up">
+                <Link href="/auth/signin">
                   <Button>Get Started</Button>
                 </Link>
               </>
@@ -71,13 +71,13 @@ export default function Home() {
               </>
             ) : (
               <>
-                <Link href="/handler/sign-up">
+                <Link href="/auth/signin">
                   <Button size="lg" className="gap-2">
                     <Github className="h-5 w-5" />
                     Start with GitHub
                   </Button>
                 </Link>
-                <Link href="/handler/sign-in">
+                <Link href="/auth/signin">
                   <Button size="lg" variant="outline">
                     Sign In
                   </Button>
