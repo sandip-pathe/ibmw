@@ -4,6 +4,7 @@ Compliance analysis endpoints.
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from loguru import logger
 
 from app.core.security import verify_admin_api_key
@@ -26,6 +27,16 @@ from app.models.schemas import (
 from app.services.embeddings import embeddings_service
 from app.services.llm import llm_service
 from app.workers.job_queue import job_queue
+
+# Multi-agent compliance scanning
+from app.services.compliance_scanner import (
+    start_compliance_scan,
+    get_scan_status,
+    approve_remediation,
+    decline_remediation,
+    get_scan_logs
+)
+from app.services.preloaded_regulations import preloaded_regulation_service
 
 router = APIRouter(prefix="/analyze", tags=["analysis"])
 
@@ -242,3 +253,154 @@ async def get_scan_results(
         created_at=scan["created_at"],
         violations=violations,
     )
+
+
+# ============================================================================
+# MULTI-AGENT COMPLIANCE SCANNING ENDPOINTS
+# ============================================================================
+
+class ApproveRemediationRequest(BaseModel):
+    """Request body for approving remediation"""
+    decision: str  # 'approve' or 'decline'
+    edited_issues: list[dict] | None = None
+    reason: str | None = None
+
+
+@router.post("/scan/{repo_id}/compliance")
+async def trigger_compliance_scan(
+    repo_id: str,
+    dependencies=[Depends(verify_admin_api_key)]
+):
+    """
+    Trigger multi-agent compliance scan for a repository
+    
+    This endpoint:
+    1. Gets the first regulation chunk from preloaded regulations
+    2. Starts a multi-agent compliance scan
+    3. Returns scan_id for tracking
+    
+    The scan will execute agents sequentially:
+    - RulePlanner: Converts regulation to engineering tasks
+    - CodeNavigator: Finds relevant code using vector search
+    - CodeInvestigator: Analyzes code for compliance
+    - ConsistencyChecker: Validates findings and produces verdict
+    - JiraBot: Generates remediation tasks (pauses for approval)
+    """
+    try:
+        # Get first regulation chunk
+        chunks = await preloaded_regulation_service.get_regulation_chunks(limit=1)
+        if not chunks:
+            raise HTTPException(404, "No regulation loaded. Please preload a regulation first.")
+        
+        regulation_chunk = chunks[0]
+        
+        # Start compliance scan
+        scan_id = await start_compliance_scan(repo_id, regulation_chunk)
+        
+        return {
+            "success": True,
+            "scan_id": scan_id,
+            "status": "running",
+            "message": "Multi-agent compliance scan started"
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to start compliance scan: {e}")
+        raise HTTPException(500, f"Failed to start compliance scan: {str(e)}")
+
+
+@router.get("/scan/{scan_id}/agents")
+async def get_agent_execution_status(scan_id: str):
+    """
+    Get agent execution timeline and status for a compliance scan
+    
+    Returns:
+    - Scan metadata (status, timestamps, verdict)
+    - Agent execution timeline with status for each agent
+    - Current agent being executed
+    - Whether scan requires user approval
+    """
+    try:
+        status_data = await get_scan_status(scan_id)
+        return {
+            "success": True,
+            "data": status_data
+        }
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:
+        logger.error(f"Failed to get scan status: {e}")
+        raise HTTPException(500, f"Failed to get scan status: {str(e)}")
+
+
+@router.get("/scan/{scan_id}/logs")
+async def get_agent_logs(scan_id: str, start_index: int = 0):
+    """
+    Get streaming agent logs for a compliance scan
+    
+    Logs are stored in Redis and include:
+    - Agent name
+    - Timestamp
+    - Log message
+    - Log level
+    
+    Use start_index for pagination
+    """
+    try:
+        logs = await get_scan_logs(scan_id, start_index)
+        return {
+            "success": True,
+            "scan_id": scan_id,
+            "logs": logs,
+            "count": len(logs)
+        }
+    except Exception as e:
+        logger.error(f"Failed to get scan logs: {e}")
+        raise HTTPException(500, f"Failed to get scan logs: {str(e)}")
+
+
+@router.patch("/scan/{scan_id}/approve")
+async def approve_scan_remediation(
+    scan_id: str,
+    request: ApproveRemediationRequest,
+    dependencies=[Depends(verify_admin_api_key)]
+):
+    """
+    Approve or decline remediation tasks
+    
+    If decision == 'approve':
+    - Creates Jira tickets for remediation tasks
+    - Updates scan status to 'completed'
+    - Returns ticket IDs
+    
+    If decision == 'decline':
+    - Marks scan as declined
+    - No tickets created
+    
+    Optional:
+    - edited_issues: List of modified remediation tasks
+    - reason: Reason for declining (if declined)
+    """
+    try:
+        if request.decision == "approve":
+            result = await approve_remediation(scan_id, request.edited_issues)
+            return {
+                "success": True,
+                "decision": "approved",
+                "data": result
+            }
+        elif request.decision == "decline":
+            result = await decline_remediation(scan_id, request.reason)
+            return {
+                "success": True,
+                "decision": "declined",
+                "data": result
+            }
+        else:
+            raise HTTPException(400, "Decision must be 'approve' or 'decline'")
+            
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:
+        logger.error(f"Failed to process approval: {e}")
+        raise HTTPException(500, f"Failed to process approval: {str(e)}")

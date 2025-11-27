@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { IndexingLogs } from "@/components/IndexingLogs";
 import {
   Loader2,
   CheckCircle,
@@ -218,29 +219,11 @@ export default function ReposStatusPage() {
         </div>
 
         {/* Agent Logs Section */}
-        <div className="mt-8 bg-white border rounded-lg p-6">
-          <h3 className="font-semibold text-blue-900 mb-4">
-            Scan Progress Logs
-          </h3>
-          <div className="space-y-2 max-h-64 overflow-y-auto">
-            {scanLogs.length === 0 ? (
-              <div className="text-gray-400">
-                No logs yet. Scanning will appear here.
-              </div>
-            ) : (
-              scanLogs.map((log, idx) => (
-                <div key={idx} className="text-sm text-gray-700">
-                  <span className="font-mono text-xs text-blue-600">
-                    [{log.agent}]{" "}
-                  </span>
-                  {log.message}
-                  <span className="ml-2 text-xs text-gray-400">
-                    {new Date(log.timestamp).toLocaleTimeString()}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
+        <div className="mt-8">
+          <IndexingLogs
+            jobId={jobId}
+            className="bg-white border rounded-xl overflow-hidden shadow-lg"
+          />
         </div>
 
         {/* Job Status Section */}

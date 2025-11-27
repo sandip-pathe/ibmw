@@ -12,45 +12,26 @@ import {
   FileText,
   CheckCircle,
   AlertCircle,
+  Info,
 } from "lucide-react";
 
+/**
+ * ⚠️ DEMO MODE: Upload Disabled
+ *
+ * This page is disabled for the hackathon demo.
+ * The system uses a preloaded RBI Payment Aggregator regulation instead.
+ *
+ * To re-enable uploads:
+ * 1. Remove the demo mode banner
+ * 2. Enable the form (remove disabled attribute)
+ * 3. Uncomment the upload endpoint in backend/app/api/regulations.py
+ */
+
 function UploadRegulationPage() {
-  // ...existing code...
   const router = useRouter();
   const app = useStackApp();
   const user = app.useUser();
   const isAuthenticated = !!user;
-  const [isUploading, setIsUploading] = useState(false);
-  const [status, setStatus] = useState<{
-    type: "success" | "error";
-    message: string;
-  } | null>(null);
-
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setIsUploading(true);
-    setStatus(null);
-
-    const formData = new FormData(e.currentTarget);
-    const adminKey = "demo-admin-key-change-in-production"; // Should be env var or user context
-
-    try {
-      const result = await apiClient.uploadRegulation(formData, adminKey);
-      setStatus({
-        type: "success",
-        message: `Document ingested successfully! ID: ${result.data.id}`,
-      });
-      // Optional: Redirect to library
-      // setTimeout(() => router.push('/regulations/library'), 2000);
-    } catch (err: unknown) {
-      setStatus({
-        type: "error",
-        message: (err as Error).message || "Upload failed",
-      });
-    } finally {
-      setIsUploading(false);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-black text-gray-100">
@@ -76,6 +57,27 @@ function UploadRegulationPage() {
 
       <main className="container mx-auto px-6 py-12">
         <div className="max-w-2xl mx-auto">
+          {/* DEMO MODE BANNER */}
+          <div className="mb-8 bg-blue-900/20 border border-blue-500/30 rounded-lg p-6">
+            <div className="flex items-start gap-4">
+              <Info className="h-6 w-6 text-blue-400 mt-0.5 shrink-0" />
+              <div>
+                <h2 className="text-lg font-semibold text-blue-400 mb-2">
+                  Demo Mode Active
+                </h2>
+                <p className="text-gray-300 text-sm leading-relaxed">
+                  For this hackathon demo, regulation upload is disabled. The
+                  system uses a preloaded{" "}
+                  <strong>RBI Payment Aggregator regulation</strong>.
+                </p>
+                <p className="text-gray-400 text-xs mt-3">
+                  Simply select the Payment Aggregator category when scanning
+                  repositories, and the regulation will be automatically loaded.
+                </p>
+              </div>
+            </div>
+          </div>
+
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-white mb-2">
               Ingest Regulation
@@ -86,8 +88,9 @@ function UploadRegulationPage() {
             </p>
           </div>
 
-          <div className="bg-[#111] border border-[#333] rounded-xl p-8">
-            <form onSubmit={handleSubmit} className="space-y-6">
+          {/* DISABLED FORM */}
+          <div className="bg-[#111] border border-[#333] rounded-xl p-8 opacity-50 cursor-not-allowed">
+            <form className="space-y-6 pointer-events-none">
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-gray-300">
@@ -95,7 +98,8 @@ function UploadRegulationPage() {
                   </label>
                   <select
                     name="regulator"
-                    className="w-full bg-black border border-[#333] rounded-md h-10 px-3 text-white focus:ring-2 focus:ring-blue-600 outline-none"
+                    disabled
+                    className="w-full bg-black border border-[#333] rounded-md h-10 px-3 text-white outline-none"
                   >
                     <option value="RBI">RBI</option>
                     <option value="SEBI">SEBI</option>
@@ -107,7 +111,8 @@ function UploadRegulationPage() {
                   </label>
                   <select
                     name="doc_type"
-                    className="w-full bg-black border border-[#333] rounded-md h-10 px-3 text-white focus:ring-2 focus:ring-blue-600 outline-none"
+                    disabled
+                    className="w-full bg-black border border-[#333] rounded-md h-10 px-3 text-white outline-none"
                   >
                     <option value="master_direction">Master Direction</option>
                     <option value="circular">Circular</option>
@@ -123,9 +128,9 @@ function UploadRegulationPage() {
                 </label>
                 <input
                   name="title"
-                  required
+                  disabled
                   placeholder="e.g. Master Direction on KYC"
-                  className="w-full bg-black border border-[#333] rounded-md h-10 px-3 text-white focus:ring-2 focus:ring-blue-600 outline-none placeholder-gray-600"
+                  className="w-full bg-black border border-[#333] rounded-md h-10 px-3 text-white outline-none placeholder-gray-600"
                 />
               </div>
 
@@ -136,8 +141,8 @@ function UploadRegulationPage() {
                 <input
                   name="publish_date"
                   type="date"
-                  required
-                  className="w-full bg-black border border-[#333] rounded-md h-10 px-3 text-white focus:ring-2 focus:ring-blue-600 outline-none [scheme:dark]"
+                  disabled
+                  className="w-full bg-black border border-[#333] rounded-md h-10 px-3 text-white outline-none"
                 />
               </div>
 
@@ -145,60 +150,29 @@ function UploadRegulationPage() {
                 <label className="text-sm font-medium text-gray-300">
                   Document (PDF)
                 </label>
-                <div className="border-2 border-dashed border-[#333] rounded-lg p-8 text-center hover:bg-[#161616] transition-colors relative group">
-                  <input
-                    name="file"
-                    type="file"
-                    accept=".pdf"
-                    required
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                  />
-                  <FileText className="h-10 w-10 text-gray-500 mx-auto mb-3 group-hover:text-blue-500 transition-colors" />
+                <div className="border-2 border-dashed border-[#333] rounded-lg p-8 text-center">
+                  <FileText className="h-10 w-10 text-gray-500 mx-auto mb-3" />
                   <p className="text-sm text-gray-400 font-medium">
-                    Click to upload or drag and drop
+                    Upload disabled in demo mode
                   </p>
                   <p className="text-xs text-gray-600 mt-1">
-                    PDF only (max 20MB)
+                    Using preloaded regulation
                   </p>
                 </div>
               </div>
 
-              {status && (
-                <div
-                  className={`p-4 rounded-lg flex items-center gap-3 ${
-                    status.type === "success"
-                      ? "bg-green-900/20 text-green-400 border border-green-900/50"
-                      : "bg-red-900/20 text-red-400 border border-red-900/50"
-                  }`}
-                >
-                  {status.type === "success" ? (
-                    <CheckCircle className="h-5 w-5" />
-                  ) : (
-                    <AlertCircle className="h-5 w-5" />
-                  )}
-                  <span>{status.message}</span>
-                </div>
-              )}
-
               <div className="pt-2">
                 <Button
-                  type="submit"
-                  disabled={isUploading}
-                  className="w-full bg-white text-black hover:bg-gray-200 h-11 font-medium"
+                  type="button"
+                  disabled
+                  className="w-full bg-gray-800 text-gray-500 h-11 font-medium cursor-not-allowed"
                 >
-                  {isUploading ? (
-                    <>Processing via LLM...</>
-                  ) : (
-                    <>
-                      <Upload className="mr-2 h-4 w-4" /> Start Ingestion
-                      Pipeline
-                    </>
-                  )}
+                  <Upload className="mr-2 h-4 w-4" /> Upload Disabled for Demo
                 </Button>
               </div>
 
               <div className="text-xs text-center text-gray-600">
-                This will trigger OCR, Chunking, Embedding and Vector Storage.
+                Feature will be enabled in production version
               </div>
             </form>
           </div>

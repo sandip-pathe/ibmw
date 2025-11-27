@@ -117,16 +117,54 @@ export const apiClient = {
 
   // --- Regulation Engine Endpoints ---
 
-  // Manual Upload
+  // DEMO MODE: Preload Regulation
+  async preloadDemoRegulation() {
+    const response = await fetch(`${API_URL}/regulations/preload-demo`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (!response.ok) throw new Error("Failed to preload demo regulation");
+    return response.json() as Promise<{
+      message: string;
+      data: {
+        rule_id: string;
+        title: string;
+        chunk_count: number;
+        status: "already_loaded" | "newly_loaded";
+      };
+    }>;
+  },
+
+  // DEMO MODE: Get Regulation Metadata
+  async getDemoRegulationMetadata() {
+    const response = await fetch(
+      `${API_URL}/regulations/preload-demo/metadata`
+    );
+    if (!response.ok) throw new Error("Failed to get demo regulation metadata");
+    return response.json() as Promise<{
+      message: string;
+      data: {
+        rule_id: string;
+        title: string;
+        category: string;
+        severity: string;
+        chunk_count: number;
+        regulatory_body: string;
+      };
+    }>;
+  },
+
+  // Manual Upload (DISABLED FOR DEMO)
   async uploadRegulation(formData: FormData, adminKey: string) {
+    // ⚠️ This endpoint is disabled in demo mode
     const response = await fetch(`${API_URL}/regulations/upload`, {
       method: "POST",
       headers: {
-        "X-API-Key": adminKey, // Using Admin Key for now as per backend
+        "X-API-Key": adminKey,
       },
       body: formData,
     });
-    if (!response.ok) throw new Error("Upload failed");
+    if (!response.ok) throw new Error("Upload disabled for demo");
     return response.json() as Promise<{
       message: string;
       data: { id: string };
