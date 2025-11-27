@@ -32,7 +32,8 @@ class EmbeddingsService:
                 api_version=settings.azure_openai_api_version,
                 azure_endpoint=settings.azure_openai_endpoint,
             )
-            self.model = settings.azure_openai_deployment_embedding
+            # Use the model name directly (deployment not required for some endpoints)
+            self.model = settings.azure_openai_deployment_embedding or "text-embedding-ada-002"
             logger.info(f"Initialized Azure OpenAI embeddings: {self.model}")
 
         elif self.provider == "openai":
@@ -67,9 +68,21 @@ class EmbeddingsService:
             Embedding vector
         """
         try:
-            response = await self.client.embeddings.create(
-                model=self.model, input=text, encoding_format="float"
-            )
+            # For Azure OpenAI, try deployment name first, fall back to direct API call
+            if self.provider == "azure":
+                try:
+                    response = await self.client.embeddings.create(
+                        model=self.model, input=text, encoding_format="float"
+                    )
+                except Exception as deploy_error:
+                    # If deployment not found, try using Azure OpenAI REST API directly
+                    logger.warning(f"Deployment {self.model} not found, trying direct API call")
+                    return await self._embed_via_direct_api(text)
+            else:
+                response = await self.client.embeddings.create(
+                    model=self.model, input=text, encoding_format="float"
+                )
+            
             embedding = response.data[0].embedding
             logger.debug(f"Generated embedding for text ({len(text)} chars)")
             return embedding
@@ -77,6 +90,56 @@ class EmbeddingsService:
         except Exception as e:
             logger.error(f"Embedding generation failed: {e}")
             raise EmbeddingProviderError(f"Failed to generate embedding: {e}")
+    
+    async def _embed_via_direct_api(self, text: str) -> list[float]:
+        """
+        Use Azure OpenAI REST API directly (no deployment needed).
+        Uses the raw REST endpoint with api-key authentication.
+        """
+        import httpx
+        
+        # Azure OpenAI REST API endpoint (not the v1 endpoint)
+        # Try available models in order of preference
+        models_to_try = [
+            "text-embedding-ada-002",
+            "text-embedding-3-small", 
+            "text-embedding-3-large"
+        ]
+        
+        for model_name in models_to_try:
+            url = f"{settings.azure_openai_endpoint.rstrip('/')}/openai/deployments/{model_name}/embeddings?api-version={settings.azure_openai_api_version}"
+            
+            headers = {
+                "Content-Type": "application/json",
+                "api-key": settings.azure_openai_key,
+            }
+            
+            payload = {
+                "input": text
+            }
+            
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(url, json=payload, headers=headers, timeout=30.0)
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        logger.info(f"Successfully used model: {model_name}")
+                        return data["data"][0]["embedding"]
+                    elif response.status_code == 404:
+                        logger.debug(f"Model {model_name} not deployed, trying next...")
+                        continue
+                    else:
+                        response.raise_for_status()
+            except Exception as e:
+                logger.debug(f"Failed with {model_name}: {e}")
+                continue
+        
+        # If all models fail, raise error
+        raise Exception(
+            f"No embedding models available. Please deploy one of these models in Azure Portal: "
+            f"{', '.join(models_to_try)}"
+        )
 
     @retry(
         stop=stop_after_attempt(3),

@@ -1,0 +1,17 @@
+INFO:     Will watch for changes in these directories: ['C:\\x\\ibmw\\backend']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [11968] using WatchFiles
+[32m2025-11-27 15:48:44.617[0m | [1mINFO    [0m | [36mapp.services.embeddings[0m:[36m__init__[0m:[36m36[0m - [1mInitialized Azure OpenAI embeddings: text-embedding-3-small[0m
+[32m2025-11-27 15:48:45.471[0m | [1mINFO    [0m | [36mapp.services.llm[0m:[36m__init__[0m:[36m45[0m - [1mInitialized Azure OpenAI LLM: gpt-4o-mini[0m
+[32m2025-11-27 15:48:45.718[0m | [33m[1mWARNING [0m | [36mapp.services.code_parser[0m:[36m_init_parsers[0m:[36m171[0m - [33m[1mTree-sitter parsers not fully initialized - using fallback text parsing[0m
+[32m2025-11-27 15:48:45.718[0m | [1mINFO    [0m | [36mapp.services.regulation_processor[0m:[36m__init__[0m:[36m139[0m - [1mRegulation processing: using pre-chunked JSON (demo mode)[0m
+[32m2025-11-27 15:48:45.926[0m | [1mINFO    [0m | [36mapp.workers.job_queue[0m:[36m__init__[0m:[36m79[0m - [1mInitialized job queue: compliance:jobs[0m
+INFO:     Started server process [3796]
+INFO:     Waiting for application startup.
+[32m2025-11-27 15:48:46.553[0m | [1mINFO    [0m | [36mapp.main[0m:[36mlifespan[0m:[36m39[0m - [1mStarting Fintech Compliance Engine vv1[0m
+[32m2025-11-27 15:48:46.553[0m | [1mINFO    [0m | [36mapp.main[0m:[36mlifespan[0m:[36m40[0m - [1mEnvironment: development[0m
+[32m2025-11-27 15:48:50.505[0m | [1mINFO    [0m | [36mapp.database[0m:[36mconnect[0m:[36m41[0m - [1mNeon database connection pool created[0m
+[32m2025-11-27 15:48:50.937[0m | [1mINFO    [0m | [36mapp.database[0m:[36mconnect[0m:[36m51[0m - [1mpgvector extension verified in Neon[0m
+[32m2025-11-27 15:48:51.157[0m | [1mINFO    [0m | [36mapp.workers.job_queue[0m:[36mconnect_async[0m:[36m90[0m - [1mConnected async Redis client[0m
+[32m2025-11-27 15:48:51.157[0m | [1mINFO    [0m | [36mapp.main[0m:[36mlifespan[0m:[36m62[0m - [1mApplication startup complete[0m
+INFO:     Application startup complete.

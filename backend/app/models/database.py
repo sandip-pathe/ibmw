@@ -143,12 +143,14 @@ class CodeMapQueries:
     @staticmethod
     async def insert_batch(conn, chunks: list[dict[str, Any]]) -> int:
         """Batch insert code map chunks."""
+        import json
+        
         query = """
             INSERT INTO code_map (
                 repo_id, file_path, language, start_line, end_line,
                 chunk_text, ast_node_type, file_hash, chunk_hash,
                 embedding, nl_summary, metadata, call_links, variables, config_keys, semantic_tags, previous_hash, delta_type
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::vector, $11, $12::jsonb, $13::jsonb, $14::jsonb, $15::jsonb, $16::jsonb, $17, $18)
             ON CONFLICT (chunk_hash) DO UPDATE SET
                 embedding = EXCLUDED.embedding,
                 nl_summary = EXCLUDED.nl_summary,
@@ -160,6 +162,21 @@ class CodeMapQueries:
                 delta_type = EXCLUDED.delta_type,
                 updated_at = NOW()
         """
+        
+        def format_embedding(emb):
+            """Convert Python list to PostgreSQL vector format."""
+            if emb is None:
+                return None
+            if isinstance(emb, list):
+                return f"[{','.join(map(str, emb))}]"
+            return emb
+        
+        def format_jsonb(obj):
+            """Convert Python dict/list to JSON string for JSONB."""
+            if obj is None:
+                return None
+            return json.dumps(obj)
+        
         async with conn.transaction():
             await conn.executemany(
                 query,
@@ -174,13 +191,13 @@ class CodeMapQueries:
                         chunk.get("ast_node_type"),
                         chunk["file_hash"],
                         chunk["chunk_hash"],
-                        chunk.get("embedding"),
+                        format_embedding(chunk.get("embedding")),
                         chunk.get("nl_summary"),
-                        chunk.get("metadata", {}),
-                        chunk.get("call_links", []),
-                        chunk.get("variables", {}),
-                        chunk.get("config_keys", {}),
-                        chunk.get("semantic_tags", []),
+                        format_jsonb(chunk.get("metadata", {})),
+                        format_jsonb(chunk.get("call_links", [])),
+                        format_jsonb(chunk.get("variables", {})),
+                        format_jsonb(chunk.get("config_keys", {})),
+                        format_jsonb(chunk.get("semantic_tags", [])),
                         chunk.get("previous_hash"),
                         chunk.get("delta_type"),
                     )

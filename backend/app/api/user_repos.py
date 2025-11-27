@@ -206,7 +206,8 @@ async def index_selected_repositories(
                 repo_id=repo_uuid,
                 installation_id=0,  # Use 0 for OAuth/no installation
                 full_name=repo["full_name"],
-                commit_sha=None
+                commit_sha=None,
+                oauth_token=github_access_token  # Pass OAuth token for cloning
             )
             job_ids.append(job_id)
             indexed_repos.append({

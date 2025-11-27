@@ -75,6 +75,9 @@ class CodeChunker:
                             chunk_text,
                             ast_chunk["start_line"],
                             language,
+                            repo_id,
+                            file_path,
+                            file_hash,
                         )
                         chunks.extend(split_chunks)
                     else:
@@ -121,7 +124,7 @@ class CodeChunker:
         return chunks
 
     def _split_large_chunk(
-        self, text: str, start_line: int, language: str
+        self, text: str, start_line: int, language: str, repo_id: UUID, file_path: str, file_hash: str
     ) -> list[dict[str, Any]]:
         """Split large chunk into smaller pieces."""
         lines = text.split("\n")
@@ -134,9 +137,16 @@ class CodeChunker:
 
             sub_chunks.append(
                 {
+                    "repo_id": repo_id,
+                    "file_path": file_path,
+                    "language": language,
                     "start_line": start_line + i,
                     "end_line": start_line + i + len(chunk_lines),
                     "chunk_text": chunk_text,
+                    "ast_node_type": None,
+                    "file_hash": file_hash,
+                    "chunk_hash": self.compute_chunk_hash(chunk_text),
+                    "metadata": {"split_chunk": True},
                 }
             )
 

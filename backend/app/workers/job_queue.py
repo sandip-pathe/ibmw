@@ -102,6 +102,7 @@ class JobQueue:
         installation_id: int,
         full_name: str,
         commit_sha: Optional[str] = None,
+        oauth_token: Optional[str] = None,
     ) -> str:
         """
         Enqueue repository indexing job.
@@ -110,6 +111,7 @@ class JobQueue:
             installation_id: GitHub installation ID
             full_name: Repository full name (owner/repo)
             commit_sha: Specific commit SHA
+            oauth_token: GitHub OAuth token (for user repos when installation_id=0)
         Returns:
             Job ID
         """
@@ -121,6 +123,7 @@ class JobQueue:
             installation_id=installation_id,
             full_name=full_name,
             commit_sha=commit_sha,
+            oauth_token=oauth_token,
             job_timeout=settings.job_timeout,
             result_ttl=86400,  # Keep results for 24 hours
             failure_ttl=604800,  # Keep failures for 7 days

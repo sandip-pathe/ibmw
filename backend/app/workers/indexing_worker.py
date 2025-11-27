@@ -106,7 +106,7 @@ async def reindex_changed_files(repo_id: str, installation_id: int, full_name: s
 
 
 async def _async_index_repository(
-    repo_id: str, installation_id: int, full_name: str, commit_sha: Optional[str]
+    repo_id: str, installation_id: int, full_name: str, commit_sha: Optional[str], oauth_token: Optional[str] = None
 ) -> dict:
     """Async implementation of repository indexing."""
     repo_uuid = UUID(repo_id)
@@ -123,28 +123,42 @@ async def _async_index_repository(
         clone_path = Path(temp_dir) / repo_name
 
         try:
-            # Get installation token
-            token = await github_client.get_installation_token(installation_id)
+            # Get token: either from GitHub App installation or OAuth
+            if installation_id == 0 and oauth_token:
+                # Use OAuth token for user repos
+                token = oauth_token
+                logger.info(f"Using OAuth token for {full_name}")
+            else:
+                # Get installation token from GitHub App
+                token = await github_client.get_installation_token(installation_id)
 
             # Clone repo (shallow, single branch)
             clone_url = f"https://x-access-token:{token}@github.com/{full_name}.git"
-            branch = commit_sha if commit_sha else "HEAD"
-
-            subprocess.run(
-                [
-                    "git",
-                    "clone",
-                    "--depth=1",
-                    "--single-branch",
-                    "--branch",
-                    branch,
-                    clone_url,
-                    str(clone_path),
-                ],
-                check=True,
-                capture_output=True,
-                timeout=300,
-            )
+            
+            # Use specific commit SHA if provided, otherwise clone default branch
+            if commit_sha:
+                # Clone entire repo first, then checkout specific commit
+                subprocess.run(
+                    ["git", "clone", "--depth=50", clone_url, str(clone_path)],
+                    check=True,
+                    capture_output=True,
+                    timeout=300,
+                )
+                subprocess.run(
+                    ["git", "checkout", commit_sha],
+                    cwd=clone_path,
+                    check=True,
+                    capture_output=True,
+                    timeout=60,
+                )
+            else:
+                # Clone default branch (don't specify --branch to use repo's default)
+                subprocess.run(
+                    ["git", "clone", "--depth=1", clone_url, str(clone_path)],
+                    check=True,
+                    capture_output=True,
+                    timeout=300,
+                )
 
             logger.info(f"Cloned {full_name} to {clone_path}")
 
@@ -193,36 +207,74 @@ async def _async_index_repository(
 
             # Generate embeddings and NL summaries
             await job_queue.connect_async()
-
-            for chunk in all_chunks:
+            # Process chunks in parallel batches for speed
+            import asyncio
+            
+            async def process_chunk(chunk):
+                """Process a single chunk: embedding + summary in parallel"""
                 # Check cache for embedding
                 text_hash = embeddings_service.compute_text_hash(chunk["chunk_text"])
                 cached_embedding = await job_queue.get_cached_embedding(text_hash)
 
-                if cached_embedding:
-                    chunk["embedding"] = cached_embedding
-                else:
-                    embedding = await embeddings_service.embed_text(chunk["chunk_text"])
-                    chunk["embedding"] = embedding
-                    await job_queue.cache_embedding(text_hash, embedding)
-
                 # Check cache for NL summary
                 cached_summary = await job_queue.get_cached_nl_summary(chunk["chunk_hash"])
 
-                if cached_summary:
-                    chunk["nl_summary"] = cached_summary
+                # Run embedding and summary generation in parallel if not cached
+                tasks = []
+                
+                if not cached_embedding:
+                    tasks.append(embeddings_service.embed_text(chunk["chunk_text"]))
                 else:
-                    try:
-                        summary = await llm_service.generate_code_summary(
-                            chunk["chunk_text"],
-                            chunk["language"],
-                            chunk["file_path"],
-                        )
-                        chunk["nl_summary"] = summary
-                        await job_queue.cache_nl_summary(chunk["chunk_hash"], summary)
-                    except Exception as e:
-                        logger.warning(f"Failed to generate NL summary: {e}")
-                        chunk["nl_summary"] = None
+                    tasks.append(asyncio.sleep(0))  # Dummy task
+                
+                if not cached_summary:
+                    tasks.append(llm_service.generate_code_summary(
+                        chunk["chunk_text"],
+                        chunk["language"],
+                        chunk["file_path"],
+                    ))
+                else:
+                    tasks.append(asyncio.sleep(0))  # Dummy task
+                
+                # Execute both in parallel
+                try:
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+                    
+                    # Handle embedding result
+                    if not cached_embedding:
+                        if isinstance(results[0], Exception):
+                            logger.warning(f"Embedding generation failed: {results[0]}")
+                            chunk["embedding"] = None
+                        else:
+                            chunk["embedding"] = results[0]
+                            await job_queue.cache_embedding(text_hash, results[0])
+                    else:
+                        chunk["embedding"] = cached_embedding
+                    
+                    # Handle summary result
+                    if not cached_summary:
+                        if isinstance(results[1], Exception):
+                            logger.warning(f"NL summary generation failed: {results[1]}")
+                            chunk["nl_summary"] = None
+                        else:
+                            chunk["nl_summary"] = results[1]
+                            await job_queue.cache_nl_summary(chunk["chunk_hash"], results[1])
+                    else:
+                        chunk["nl_summary"] = cached_summary
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to process chunk: {e}")
+                    chunk["embedding"] = cached_embedding
+                    chunk["nl_summary"] = cached_summary
+                
+                return chunk
+            
+            # Process chunks in batches of 10 to avoid overwhelming APIs
+            batch_size = 10
+            for i in range(0, len(all_chunks), batch_size):
+                batch = all_chunks[i:i + batch_size]
+                await asyncio.gather(*[process_chunk(chunk) for chunk in batch])
+                logger.info(f"Processed {min(i + batch_size, len(all_chunks))}/{len(all_chunks)} chunks")
 
             # Store chunks in database
             async with db.acquire() as conn:
@@ -257,16 +309,17 @@ async def _async_index_repository(
 
 
 def index_repository(
-    repo_id: str, installation_id: int, full_name: str, commit_sha: Optional[str] = None
+    repo_id: str, installation_id: int, full_name: str, commit_sha: Optional[str] = None, oauth_token: Optional[str] = None
 ) -> dict:
     """
     RQ job: Index repository code.
 
     Args:
         repo_id: Repository UUID (string)
-        installation_id: GitHub installation ID
+        installation_id: GitHub installation ID (use 0 for OAuth)
         full_name: Repository full name (owner/repo)
         commit_sha: Specific commit SHA
+        oauth_token: GitHub OAuth token (for user repos when installation_id=0)
 
     Returns:
         Job result dictionary
@@ -279,7 +332,7 @@ def index_repository(
     try:
         logger.info(f"[WORKER] Starting indexing job for repo: {full_name} (repo_id: {repo_id})")
         result = asyncio.run(
-            _async_index_repository(repo_id, installation_id, full_name, commit_sha)
+            _async_index_repository(repo_id, installation_id, full_name, commit_sha, oauth_token)
         )
         logger.info(f"[WORKER] Finished indexing job for repo: {full_name} (repo_id: {repo_id}) | Result: {result}")
         if job_id:
@@ -461,12 +514,17 @@ def analyze_compliance(
 
 # Worker entry point
 if __name__ == "__main__":
+    import sys
     from rq import Worker
+    from rq.worker import SimpleWorker
 
     logger.info("[WORKER] Indexing worker started and listening for jobs.")
 
-    worker = Worker(
-        queues=[settings.queue_name],  # Use queue name string, e.g., 'indexing'
+    # Use SimpleWorker on Windows (no fork support)
+    worker_class = SimpleWorker if sys.platform == "win32" else Worker
+    
+    worker = worker_class(
+        queues=[settings.queue_name],  # Use queue name string, e.g., 'compliance:jobs'
         connection=job_queue.sync_redis,
         log_job_description=True,
     )
