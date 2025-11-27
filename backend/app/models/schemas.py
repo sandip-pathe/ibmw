@@ -1,3 +1,4 @@
+# --- NEW REGULATION CHUNK SCHEMA ---
 """
 Pydantic schemas for API request/response models.
 """
@@ -26,6 +27,16 @@ class GitHubInstallation(BaseModel):
     target_type: str
     permissions: dict[str, str]
     events: list[str]
+
+class RegulationChunkResponse(BaseModel):
+    chunk_id: str
+    rule_id: str
+    rule_section: str | None = None
+    source_document: str | None = None
+    chunk_text: str
+    chunk_index: int
+    nl_summary: str | None = None
+    created_at: datetime
 
 class WebhookInstallationEvent(BaseModel):
     action: Literal["created", "deleted", "suspend", "unsuspend"]

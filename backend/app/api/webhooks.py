@@ -5,12 +5,12 @@ import json
 
 from fastapi import APIRouter, HTTPException, Request, status
 from loguru import logger
-
+from typing import Optional
 from app.core.webhook_verifier import webhook_verifier
 from app.database import get_db
 from app.models.database import InstallationQueries, RepositoryQueries, WebhookEventQueries
 from app.models.schemas import SuccessResponse
-from app.workers.queue import job_queue
+from app.workers.job_queue import job_queue
 
 router = APIRouter(tags=["webhooks"])
 
@@ -31,8 +31,8 @@ async def github_webhook(request: Request):
     payload = json.loads(payload_bytes)
 
     # Get event type
-    event_type = request.headers.get("X-GitHub-Event")
-    delivery_id = request.headers.get("X-GitHub-Delivery")
+    event_type = request.headers.get("X-GitHub-Event") or ""
+    delivery_id = request.headers.get("X-GitHub-Delivery") or ""
 
     logger.info(f"Received webhook: {event_type} (delivery: {delivery_id})")
 
@@ -40,13 +40,13 @@ async def github_webhook(request: Request):
 
     # Check idempotency
     async with db.acquire() as conn:
-        is_processed = await WebhookEventQueries.is_processed(conn, delivery_id)
+        is_processed = await WebhookEventQueries.is_processed(conn, str(delivery_id))
         if is_processed:
             logger.info(f"Webhook {delivery_id} already processed (idempotent)")
             return SuccessResponse(message="Webhook already processed")
 
         # Store event
-        await WebhookEventQueries.insert(conn, delivery_id, event_type, payload)
+        await WebhookEventQueries.insert(conn, str(delivery_id), str(event_type), payload)
 
     # Handle event
     try:
@@ -67,7 +67,7 @@ async def github_webhook(request: Request):
 
         # Mark as processed
         async with db.acquire() as conn:
-            await WebhookEventQueries.mark_processed(conn, delivery_id)
+            await WebhookEventQueries.mark_processed(conn, str(delivery_id))
 
         return SuccessResponse(message=f"Webhook {event_type} processed successfully")
 
@@ -151,7 +151,7 @@ async def handle_push_event(payload: dict) -> None:
         logger.info(f"Ignoring push to non-default branch: {ref}")
         return
 
-    commit_sha = payload["after"]
+    commit_sha = payload.get("after")
 
     # Detect changed files from commits
     changed_files = set()
@@ -167,12 +167,12 @@ async def handle_push_event(payload: dict) -> None:
 
     if repo:
         # Enqueue selective re-indexing job for changed files
+        # TODO: Implement selective re-indexing for changed files if needed
         job_queue.enqueue_indexing_job(
             repo_id=repo["repo_id"],
             installation_id=installation["id"],
             full_name=repository["full_name"],
             commit_sha=commit_sha,
-            changed_files=list(changed_files),
         )
         logger.info(f"Enqueued selective re-indexing for {repository['full_name']} after push: {changed_files}")
     else:
@@ -202,7 +202,7 @@ async def _enqueue_repo_indexing(
     github_id: int,
     repo_name: str,
     full_name: str,
-    commit_sha: str = None,
+    commit_sha: Optional[str] = None,
 ) -> None:
     """Helper to store repo and enqueue indexing."""
     db = await get_db()

@@ -110,11 +110,15 @@ async def list_user_repositories(
     """
     from app.config import get_settings
     settings = get_settings()
+    logger.info("[API] /repos called")
     try:
         if not authorization or not authorization.startswith("Bearer "):
+            logger.warning("[API] Missing or invalid authorization header")
             raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
         github_access_token = authorization.replace("Bearer ", "")
+        logger.info(f"[API] Using GitHub token: {github_access_token[:6]}... (truncated)")
         repos = await github_oauth.list_user_repos(github_access_token)
+        logger.info(f"[API] Fetched {len(repos)} raw repos from GitHub")
         formatted_repos = [
             UserRepoResponse(
                 id=repo["id"],
@@ -133,9 +137,10 @@ async def list_user_repositories(
             )
             for repo in repos
         ]
+        logger.info(f"[API] Returning {len(formatted_repos)} formatted repos to frontend")
         return {"repos": formatted_repos, "total": len(formatted_repos)}
     except Exception as e:
-        logger.error(f"Failed to list user repos: {e}")
+        logger.error(f"[API] Failed to list user repos: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -161,18 +166,14 @@ async def index_selected_repositories(
         if not selected_repos:
             raise HTTPException(status_code=404, detail="No matching repositories found")
         
-        # TODO: Queue indexing jobs for each repo
-        # This will be implemented in the indexing worker
-        
+        from app.workers.job_queue import job_queue
         indexed_repos = []
+        job_ids = []
         for repo in selected_repos:
             logger.info(f"Queuing indexing job for: {repo['full_name']}")
-            
             # Store repo metadata in database (requires installation_id = NULL for now)
             async with db.acquire() as conn:
-                # For OAuth-based repos, we don't have installation_id yet
-                # Set to NULL, will be linked when GitHub App is installed
-                await conn.execute(
+                repo_row = await conn.fetchrow(
                     """
                     INSERT INTO repos (
                         github_id, repo_name, full_name, 
@@ -189,17 +190,36 @@ async def index_selected_repositories(
                     repo["private"],
                     repo.get("default_branch", "main"),
                 )
-            
+                repo_id = repo_row["repo_id"] if repo_row else None
+            # Enqueue indexing job (installation_id is 0 for OAuth)
+            from uuid import UUID
+            if repo_id is None:
+                raise HTTPException(status_code=500, detail="Failed to retrieve repo_id from database")
+            if isinstance(repo_id, str):
+                repo_uuid = UUID(repo_id)
+            elif isinstance(repo_id, UUID):
+                repo_uuid = repo_id
+            else:
+                # If repo_id is int, convert to string then UUID
+                repo_uuid = UUID(str(repo_id))
+            job_id = job_queue.enqueue_indexing_job(
+                repo_id=repo_uuid,
+                installation_id=0,  # Use 0 for OAuth/no installation
+                full_name=repo["full_name"],
+                commit_sha=None
+            )
+            job_ids.append(job_id)
             indexed_repos.append({
                 "id": repo["id"],
                 "full_name": repo["full_name"],
-                "status": "queued"
+                "status": "queued",
+                "job_id": job_id
             })
-        
         return {
             "success": True,
             "message": f"Queued {len(indexed_repos)} repositories for indexing",
-            "repos": indexed_repos
+            "repos": indexed_repos,
+            "job_ids": job_ids
         }
     
     except Exception as e:

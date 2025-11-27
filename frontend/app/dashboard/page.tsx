@@ -1,226 +1,129 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Github,
-  Loader2,
-  ArrowRight,
-  Upload,
-  Activity,
-  FileText,
-} from "lucide-react";
-import { apiClient } from "@/lib/api-client";
+import { useRouter } from "next/navigation";
+import { Plus, ArrowRight, Github } from "lucide-react";
+import { ComplianceScore } from "@/components/ComplianceScoreCard";
+import { JiraIntegration } from "@/components/JiraComponent";
+import { RecentActivity } from "@/components/RecentActivity";
 
-interface GitHubUser {
-  id: number;
-  login: string;
-  name?: string;
-  email?: string;
-  avatar_url: string;
-}
-
-function DashboardPage() {
+export default function DashboardPage() {
   const router = useRouter();
-  const [isConnectingGitHub, setIsConnectingGitHub] = useState(false);
-  const [githubUser, setGithubUser] = useState<GitHubUser | null>(null);
-  // Remove isSessionChecked, session is protected by withAuth
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    setTimeout(() => {
-      setUserEmail(localStorage.getItem("user_email"));
-    }, 0);
-
-    // Check if GitHub is connected
-    const token = localStorage.getItem("github_access_token");
-    const userStr = localStorage.getItem("github_user");
-    if (token && userStr) {
-      try {
-        const user = JSON.parse(userStr) as GitHubUser;
-        setTimeout(() => setGithubUser(user), 0);
-      } catch {
-        // Invalid data, continue without GitHub
-      }
-    }
-  }, [router]);
-  const handleConnectGitHub = async () => {
-    setIsConnectingGitHub(true);
-    try {
-      const redirectUri = process.env.NEXT_PUBLIC_GITHUB_REDIRECT_URI;
-      console.log("Using redirect URI - dashboard:", redirectUri);
-      const result = await apiClient.getGitHubAuthUrl(redirectUri as string);
-      console.log("Redirecting to GitHub auth URL:", result.authorization_url);
-      window.location.href = result.authorization_url;
-    } catch (error) {
-      console.error("Failed to get GitHub auth URL:", error);
-      setIsConnectingGitHub(false);
-    }
-  };
-
-  const handleSignOut = () => {
-    localStorage.removeItem("github_access_token");
-    localStorage.removeItem("github_user");
-    localStorage.removeItem("user_email");
-    router.push("/");
-  };
-
-  // Remove loading UI, session is protected by withAuth
 
   return (
-    <div className="min-h-screen bg-black">
-      {/* Navigation */}
-      <nav className="border-b border-[#333]">
-        <div className="container mx-auto px-6 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <div className="w-6 h-6 flex items-center">
-              <svg viewBox="0 0 76 65" fill="white">
-                <path d="M37.5274 0L75.0548 65H0L37.5274 0Z" />
-              </svg>
-            </div>
-            <span className="text-white font-semibold text-lg">
-              Compliance Engine
-            </span>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="text-gray-400 text-sm">
-              {userEmail || githubUser?.login}
-            </span>
-            <Button
-              variant="ghost"
-              onClick={handleSignOut}
-              className="text-gray-400 hover:text-white"
-            >
-              Sign Out
-            </Button>
-          </div>
+    <div className="p-8 max-w-7xl mx-auto space-y-8">
+      {/* Header */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold text-white">Overview</h1>
+          <p className="text-gray-400 mt-1">Welcome back, Admin.</p>
         </div>
-      </nav>
+        <div className="flex gap-3">
+          <Button
+            variant="outline"
+            className="border-[#333] text-gray-300 hover:bg-[#1a1a1a]"
+            onClick={() => router.push("/repos/select")}
+          >
+            <Github className="h-4 w-4 mr-2" />
+            Add Repository
+          </Button>
+          <Button
+            className="bg-white text-black hover:bg-gray-200"
+            onClick={() => router.push("/scans/new")} // Assuming a new scan page exists or re-scans
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            New Scan
+          </Button>
+        </div>
+      </div>
 
-      {/* Main Content */}
-      <main className="container mx-auto px-6 py-12">
-        <div className="max-w-5xl mx-auto">
-          <div className="mb-12">
-            <h1 className="text-white text-3xl font-bold mb-2">
-              Compliance Dashboard
-            </h1>
-            <p className="text-gray-400">
-              Manage regulations and analyze repositories.
-            </p>
+      {/* KPI Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <ComplianceScore score={78} trend={-5} />
+
+        <div className="bg-[#111] border border-[#333] rounded-xl p-6">
+          <p className="text-sm text-gray-400 font-medium">Open Violations</p>
+          <div className="mt-4 flex items-baseline gap-2">
+            <h3 className="text-3xl font-bold text-white">12</h3>
+            <span className="text-sm text-red-400 font-medium">+2 new</span>
+          </div>
+          <div className="mt-4 flex gap-2">
+            <div className="h-2 flex-1 bg-red-500 rounded-full" />
+            <div className="h-2 w-1/3 bg-orange-500 rounded-full" />
+            <div className="h-2 w-1/4 bg-yellow-500 rounded-full" />
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            2 Critical, 4 High, 6 Medium
+          </p>
+        </div>
+
+        <div className="bg-[#111] border border-[#333] rounded-xl p-6">
+          <p className="text-sm text-gray-400 font-medium">
+            Repositories Scanned
+          </p>
+          <h3 className="text-3xl font-bold text-white mt-4">4</h3>
+          <p className="text-sm text-gray-500 mt-1">Last scan 15 mins ago</p>
+          <Button
+            variant="link"
+            className="text-blue-400 h-auto p-0 mt-4 text-xs"
+            onClick={() => router.push("/repos/status")}
+          >
+            View all repos <ArrowRight className="h-3 w-3 ml-1" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Main Content Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Left Column */}
+        <div className="lg:col-span-2 space-y-8">
+          {/* Jira Widget */}
+          <JiraIntegration />
+
+          {/* Activity Feed */}
+          <RecentActivity activities={[]} />
+        </div>
+
+        {/* Right Column - Review Queue Mini */}
+        <div className="bg-[#111] border border-[#333] rounded-xl p-6 h-fit">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-lg font-semibold text-white">Review Queue</h3>
+            <span className="bg-yellow-900/20 text-yellow-500 text-xs px-2 py-1 rounded-full border border-yellow-900/30">
+              5 Pending
+            </span>
           </div>
 
-          {/* Regulation Tools Grid */}
-          <div className="grid md:grid-cols-3 gap-6 mb-12">
-            {/* Card 1: Live Feed */}
-            <div
-              className="bg-[#111] border border-[#333] p-6 rounded-xl hover:border-blue-800 transition-colors cursor-pointer group"
-              onClick={() => router.push("/regulations/live")}
-            >
-              <div className="h-10 w-10 bg-blue-900/30 rounded-lg flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors text-blue-500">
-                <Activity className="h-5 w-5" />
-              </div>
-              <h3 className="text-white font-semibold mb-1">
-                Live Regulatory Feed
-              </h3>
-              <p className="text-gray-400 text-sm">
-                Monitor RBI & SEBI RSS feeds in real-time.
-              </p>
-            </div>
-
-            {/* Card 2: Manual Upload */}
-            <div
-              className="bg-[#111] border border-[#333] p-6 rounded-xl hover:border-blue-800 transition-colors cursor-pointer group"
-              onClick={() => router.push("/regulations/upload")}
-            >
-              <div className="h-10 w-10 bg-purple-900/30 rounded-lg flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors text-purple-500">
-                <Upload className="h-5 w-5" />
-              </div>
-              <h3 className="text-white font-semibold mb-1">
-                Upload Regulation
-              </h3>
-              <p className="text-gray-400 text-sm">
-                Ingest PDF Master Directions manually.
-              </p>
-            </div>
-
-            {/* Card 3: Review Queue */}
-            <div
-              className="bg-[#111] border border-[#333] p-6 rounded-xl hover:border-blue-800 transition-colors cursor-pointer group"
-              onClick={() => router.push("/regulations/review")}
-            >
-              <div className="h-10 w-10 bg-yellow-900/30 rounded-lg flex items-center justify-center mb-4 group-hover:bg-yellow-600 group-hover:text-white transition-colors text-yellow-500">
-                <FileText className="h-5 w-5" />
-              </div>
-              <h3 className="text-white font-semibold mb-1">Review Queue</h3>
-              <p className="text-gray-400 text-sm">
-                Approve draft regulations detected by AI.
-              </p>
-            </div>
-          </div>
-
-          <h2 className="text-xl font-bold text-white mb-4">Repositories</h2>
-
-          {!githubUser ? (
-            <div className="bg-[#111] border border-[#333] rounded-lg p-12 text-center">
-              <div className="w-16 h-16 bg-[#1a1a1a] border border-[#333] rounded-full flex items-center justify-center mx-auto mb-6">
-                <Github className="h-8 w-8 text-gray-400" />
-              </div>
-              <h2 className="text-white text-2xl font-semibold mb-3">
-                Connect GitHub
-              </h2>
-              <p className="text-gray-400 mb-8">
-                Link your account to select repositories for analysis.
-              </p>
-              <Button
-                onClick={handleConnectGitHub}
-                disabled={isConnectingGitHub}
-                className="bg-white text-black hover:bg-gray-200 h-11 px-6 font-medium gap-2"
+          <div className="space-y-4">
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="p-3 bg-[#0a0a0a] border border-[#222] rounded-lg hover:border-gray-600 transition-colors cursor-pointer group"
+                onClick={() => router.push("/findings")}
               >
-                {isConnectingGitHub ? (
-                  <>
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                    Connecting...
-                  </>
-                ) : (
-                  <>
-                    <Github className="h-5 w-5" />
-                    Connect GitHub
-                  </>
-                )}
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              <div className="bg-[#111] border border-[#2e2e2e] rounded-lg p-6 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-green-500/10 border border-green-500/20 rounded-full flex items-center justify-center">
-                    <Github className="h-6 w-6 text-green-500" />
-                  </div>
-                  <div>
-                    <h3 className="text-white font-semibold">
-                      GitHub Connected
-                    </h3>
-                    <p className="text-sm text-gray-400">
-                      Ready to analyze code
-                    </p>
-                  </div>
+                <div className="flex justify-between items-start mb-2">
+                  <span className="text-xs font-mono text-gray-500">
+                    RBI-DATA-002
+                  </span>
+                  <span className="text-[10px] text-red-400 bg-red-950/30 px-1.5 py-0.5 rounded border border-red-900/30">
+                    CRITICAL
+                  </span>
                 </div>
-                <Button
-                  onClick={() => router.push("/repos/select")}
-                  className="bg-white text-black hover:bg-gray-200 h-10 px-5 font-medium gap-2"
-                >
-                  Select Repositories
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
+                <p className="text-sm text-gray-300 line-clamp-2 group-hover:text-white">
+                  Hardcoded AWS S3 bucket region us-east-1 violates data
+                  localization policy.
+                </p>
               </div>
-            </div>
-          )}
+            ))}
+          </div>
+
+          <Button
+            className="w-full mt-6 bg-[#222] text-white hover:bg-[#333]"
+            onClick={() => router.push("/findings")}
+          >
+            Start Review Session
+          </Button>
         </div>
-      </main>
+      </div>
     </div>
   );
 }
-
-export default DashboardPage;

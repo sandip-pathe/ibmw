@@ -19,12 +19,13 @@ from app.api import (
     auth, 
     regulations,
     violations,   # New
-    integrations  # New
+    integrations,  # New
+    job_status     # <-- Add job status router
 )
 from app.config import get_settings
 from app.database import db
 from app.services.rss_scraper import rss_agent
-from app.workers.queue import job_queue
+from app.workers.job_queue import job_queue
 
 load_dotenv()
 
@@ -127,6 +128,7 @@ app.include_router(user_repos.router)
 app.include_router(regulations.router)
 app.include_router(violations.router)    # New
 app.include_router(integrations.router)  # New
+app.include_router(job_status.router)    # <-- Add job status router
 
 # Root endpoint
 @app.get("/")

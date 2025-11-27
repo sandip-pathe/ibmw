@@ -13,7 +13,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 export const apiClient = {
   // Get GitHub OAuth authorization URL
   async getGitHubAuthUrl(redirectUri: string, state?: string) {
-    const response = await fetch(`${API_URL}/user/auth/github/authorize`, {
+    const response = await fetch(`${API_URL}/auth/github/authorize`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ redirect_uri: redirectUri, state }),
@@ -77,11 +77,15 @@ export const apiClient = {
 
   // List user's GitHub repositories
   async listUserRepos(stackAuthToken: string) {
+    console.log("[FRONTEND] Fetching /user/repos...");
     const response = await fetch(`${API_URL}/user/repos`, {
       headers: { Authorization: `Bearer ${stackAuthToken}` },
     });
+    console.log("[FRONTEND] Response status:", response.status);
+    const data = await response.json();
+    console.log("[FRONTEND] Repositories data:", data);
     if (!response.ok) throw new Error("Failed to list repos");
-    return response.json() as Promise<{ repos: GitHubRepo[]; total: number }>;
+    return data as { repos: GitHubRepo[]; total: number };
   },
 
   // Index selected repositories

@@ -10,7 +10,7 @@ from app.core.security import verify_admin_api_key
 from app.database import get_db
 from app.models.database import InstallationQueries, RepositoryQueries
 from app.models.schemas import InstallationResponse, RepositoryResponse, SuccessResponse
-from app.workers.queue import job_queue
+from app.workers.job_queue import job_queue
 
 router = APIRouter(prefix="/installations", tags=["installations"])
 

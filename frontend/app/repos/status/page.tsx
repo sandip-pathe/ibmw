@@ -18,20 +18,100 @@ interface IndexedRepo {
   status: "queued" | "indexing" | "completed" | "failed";
 }
 
+interface AgentLog {
+  agent: string;
+  message: string;
+  timestamp: string;
+  ts_epoch: number;
+}
+
+interface JobStatus {
+  job_id: string;
+  job_type: string;
+  status: "queued" | "running" | "completed" | "failed";
+  result?: any;
+  error?: string;
+  created_at?: string;
+  started_at?: string;
+  completed_at?: string;
+}
+
 export default function ReposStatusPage() {
   const router = useRouter();
-  const [repos] = useState<IndexedRepo[]>([
-    { id: 1, full_name: "user/repo1", status: "completed" },
-    { id: 2, full_name: "user/repo2", status: "indexing" },
-    { id: 3, full_name: "user/repo3", status: "queued" },
-  ]);
+  const [repos, setRepos] = useState<IndexedRepo[]>([]);
+  const [scanLogs, setScanLogs] = useState<AgentLog[]>([]);
+  const [scanId, setScanId] = useState<string>("");
+  const [jobId, setJobId] = useState<string>("");
+  const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem("github_access_token");
     if (!token) {
       router.push("/handler/sign-in");
+      return;
     }
+    // Fetch actual repo status from backend
+    const fetchRepos = async () => {
+      try {
+        const res = await fetch("http://localhost:8000/user/repos", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          // Map backend response to IndexedRepo[]
+          const repoList = (data.repos || []).map((repo: any) => ({
+            id: repo.id,
+            full_name: repo.full_name,
+            status: repo.status || "queued", // Use actual status if available
+          }));
+          setRepos(repoList);
+        }
+      } catch (e) {
+        // Optionally log error
+      }
+    };
+    fetchRepos();
+
+    const storedScanId = localStorage.getItem("current_scan_id");
+    if (storedScanId) setScanId(storedScanId);
+
+    const storedJobId = localStorage.getItem("current_job_id");
+    if (storedJobId) setJobId(storedJobId);
   }, [router]);
+
+  useEffect(() => {
+    if (!scanId) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(
+          `http://localhost:8000/analyze/scan/${scanId}/logs`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setScanLogs(data.logs || []);
+        }
+      } catch (e) {
+        // Optionally log error
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [scanId]);
+
+  useEffect(() => {
+    if (!jobId) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`http://localhost:8000/jobs/${jobId}/status`);
+        if (res.ok) {
+          const data = await res.json();
+          setJobStatus(data);
+        }
+      } catch (e) {
+        // Optionally log error
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [jobId]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -136,6 +216,55 @@ export default function ReposStatusPage() {
             </div>
           ))}
         </div>
+
+        {/* Agent Logs Section */}
+        <div className="mt-8 bg-white border rounded-lg p-6">
+          <h3 className="font-semibold text-blue-900 mb-4">
+            Scan Progress Logs
+          </h3>
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {scanLogs.length === 0 ? (
+              <div className="text-gray-400">
+                No logs yet. Scanning will appear here.
+              </div>
+            ) : (
+              scanLogs.map((log, idx) => (
+                <div key={idx} className="text-sm text-gray-700">
+                  <span className="font-mono text-xs text-blue-600">
+                    [{log.agent}]{" "}
+                  </span>
+                  {log.message}
+                  <span className="ml-2 text-xs text-gray-400">
+                    {new Date(log.timestamp).toLocaleTimeString()}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Job Status Section */}
+        {jobStatus && (
+          <div className="mt-8 bg-white border rounded-lg p-6">
+            <h3 className="font-semibold text-blue-900 mb-4">Job Status</h3>
+            <div className="flex items-center gap-4">
+              <span className="font-mono text-xs text-blue-600">
+                {jobStatus.status}
+              </span>
+              {jobStatus.error && (
+                <span className="text-xs text-red-600">
+                  Error: {jobStatus.error}
+                </span>
+              )}
+            </div>
+            {jobStatus.completed_at && (
+              <div className="text-xs text-gray-500 mt-2">
+                Completed at:{" "}
+                {new Date(jobStatus.completed_at).toLocaleString()}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="mt-8 text-center">
           <Button variant="outline" onClick={() => router.push("/dashboard")}>

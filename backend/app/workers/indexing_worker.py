@@ -1,3 +1,16 @@
+from fastapi import APIRouter, Query
+from app.services.agents import get_scan_logs
+
+# API router for scan logs
+router = APIRouter(prefix="/analyze", tags=["analyze"])
+
+@router.get("/scan/{scan_id}/logs")
+async def get_scan_agent_logs(scan_id: str, start: int = Query(0)):
+    """
+    Get agent logs for a scan (for frontend progress display).
+    """
+    logs = await get_scan_logs(scan_id)
+    return {"logs": logs[start:]}
 """
 RQ worker for background indexing and analysis jobs.
 """
@@ -8,13 +21,36 @@ from pathlib import Path
 from typing import Optional
 from uuid import UUID
 
+
 from loguru import logger
+from app.models.database import (
+    CodeMapQueries,
+    RegulationChunkQueries,
+    RepositoryQueries,
+    ScanQueries,
+    ViolationQueries,
+)
+from app.models.job_status import JobStatus
+
+from typing import Optional, Dict
+async def update_job_status(job_id: str, status: str, repo_id: Optional[str] = None, result: Optional[Dict] = None, error: Optional[str] = None):
+    """Update job status in jobs table."""
+    async with db.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE jobs SET status = $2, result = $3, error = $4,
+                started_at = CASE WHEN $2 = 'running' THEN NOW() ELSE started_at END,
+                completed_at = CASE WHEN $2 IN ('completed', 'failed') THEN NOW() ELSE completed_at END
+            WHERE job_id = $1
+            """,
+            job_id, status, result, error
+        )
 
 from app.config import get_settings
 from app.core.github_client import github_client
 from app.database import db
 from app.models.database import (
-    CodeChunkQueries,
+    CodeMapQueries,
     RegulationChunkQueries,
     RepositoryQueries,
     ScanQueries,
@@ -23,7 +59,7 @@ from app.models.database import (
 from app.services.chunker import code_chunker
 from app.services.embeddings import embeddings_service
 from app.services.llm import llm_service
-from app.workers.queue import job_queue
+from app.workers.job_queue import job_queue
 from app.services.agents import AgentLogger 
 
 settings = get_settings()
@@ -62,7 +98,7 @@ async def reindex_changed_files(repo_id: str, installation_id: int, full_name: s
                 chunk["nl_summary"] = summary
             # Store updated chunks in DB
             async with db.acquire() as conn:
-                await CodeChunkQueries.upsert_batch(conn, chunks)
+                await CodeMapQueries.insert_batch(conn, chunks)
         logger.info(f"Reindexed changed files for repo {full_name}: {changed_files}")
     finally:
         import shutil
@@ -190,7 +226,7 @@ async def _async_index_repository(
 
             # Store chunks in database
             async with db.acquire() as conn:
-                inserted = await CodeChunkQueries.insert_batch(conn, all_chunks)
+                inserted = await CodeMapQueries.insert_batch(conn, all_chunks)
                 await RepositoryQueries.update_sync_status(
                     conn, repo_uuid, actual_commit_sha, file_count, len(all_chunks)
                 )
@@ -235,9 +271,26 @@ def index_repository(
     Returns:
         Job result dictionary
     """
-    return asyncio.run(
-        _async_index_repository(repo_id, installation_id, full_name, commit_sha)
-    )
+    import os
+    job_id = os.environ.get('RQ_JOB_ID')
+    logger.info(f"[WORKER] Job received: repo_id={repo_id}, installation_id={installation_id}, full_name={full_name}, commit_sha={commit_sha}, job_id={job_id}")
+    if job_id:
+        asyncio.run(update_job_status(job_id, "running", repo_id=repo_id))
+    try:
+        logger.info(f"[WORKER] Starting indexing job for repo: {full_name} (repo_id: {repo_id})")
+        result = asyncio.run(
+            _async_index_repository(repo_id, installation_id, full_name, commit_sha)
+        )
+        logger.info(f"[WORKER] Finished indexing job for repo: {full_name} (repo_id: {repo_id}) | Result: {result}")
+        if job_id:
+            status = "completed" if result.get("status") == "success" else "failed"
+            asyncio.run(update_job_status(job_id, status, repo_id=repo_id, result=result, error=result.get("error")))
+        return result
+    except Exception as e:
+        logger.error(f"[WORKER] Error indexing repo {full_name}: {e}")
+        if job_id:
+            asyncio.run(update_job_status(job_id, "failed", repo_id=repo_id, error=str(e)))
+        raise
 
 
 async def _async_analyze_compliance(
@@ -285,11 +338,11 @@ async def _async_analyze_compliance(
                 await agent.log("NAVIGATOR", f"Searching codebase for Rule {rule_id} context...")
                 
                 # Vector similarity search
-                similar_chunks = await CodeChunkQueries.search_similar(
+                similar_chunks = await CodeMapQueries.search_similar(
                     conn,
                     reg_chunk["embedding"],
                     repo_uuid,
-                    top_k=5, # Reduced for demo speed
+                    top_k=5
                 )
                 
                 if not similar_chunks:
@@ -395,17 +448,25 @@ def analyze_compliance(
     Returns:
         Job result dictionary
     """
-    return asyncio.run(_async_analyze_compliance(scan_id, repo_id, rule_ids))
+    import os
+    job_id = os.environ.get('RQ_JOB_ID')
+    if job_id:
+        asyncio.run(update_job_status(job_id, "running", repo_id=repo_id))
+    result = asyncio.run(_async_analyze_compliance(scan_id, repo_id, rule_ids))
+    if job_id:
+        status = "completed" if result.get("status") == "success" else "failed"
+        asyncio.run(update_job_status(job_id, status, repo_id=repo_id, result=result, error=result.get("error")))
+    return result
 
 
 # Worker entry point
 if __name__ == "__main__":
     from rq import Worker
 
-    logger.info("Starting RQ worker...")
+    logger.info("[WORKER] Indexing worker started and listening for jobs.")
 
     worker = Worker(
-        queues=[job_queue.queue],
+        queues=[settings.queue_name],  # Use queue name string, e.g., 'indexing'
         connection=job_queue.sync_redis,
         log_job_description=True,
     )

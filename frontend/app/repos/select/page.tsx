@@ -62,10 +62,23 @@ function SelectReposPage() {
 
     try {
       setIsIndexing(true);
-      await apiClient.indexRepositories(token, Array.from(selectedRepoIds));
-
-      // Redirect to status page, passing the first repo ID as an example or just general status
-      router.push("/repos/status");
+      const result = await apiClient.indexRepositories(
+        token,
+        Array.from(selectedRepoIds)
+      );
+      // Type guard for job_ids
+      if (
+        "job_ids" in result &&
+        Array.isArray(result.job_ids) &&
+        result.job_ids.length > 0
+      ) {
+        localStorage.setItem("current_job_id", result.job_ids[0]);
+        // Optionally store all job_ids if needed
+        // localStorage.setItem("current_job_ids", JSON.stringify(result.job_ids));
+        router.push("/repos/status");
+      } else {
+        setError("No job IDs returned from backend.");
+      }
     } catch (err) {
       console.error("Failed to index repos:", err);
       setError("Failed to start indexing. Please try again.");
@@ -115,6 +128,11 @@ function SelectReposPage() {
         </div>
 
         {/* List */}
+        {error && (
+          <div className="mb-4 p-3 bg-red-900 text-red-200 rounded-xl border border-red-700">
+            {error}
+          </div>
+        )}
         <div className="bg-[#111] border border-[#333] rounded-xl overflow-hidden">
           <div className="p-4 border-b border-[#333] bg-[#161616] flex justify-between items-center">
             <span className="text-sm text-gray-400">

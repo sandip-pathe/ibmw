@@ -1,9 +1,8 @@
 import os
 import requests
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Body, Query
 from pydantic import BaseModel, EmailStr
 from jose import jwt
-
 
 from app.config import get_settings
 settings = get_settings()
@@ -12,6 +11,25 @@ NEON_API_KEY = settings.neon_api_key
 STACK_JWKS_URL = settings.stack_jwks_url
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# --- GitHub OAuth Authorization URL ---
+@router.post("/github/authorize")
+def github_authorize(redirect_uri: str = Body(...), state: str = Body(None)):
+    """
+    Returns the GitHub OAuth authorization URL for the frontend to redirect the user.
+    """
+    settings = get_settings()
+    github_client_id = settings.github_oauth_client_id
+    base_url = "https://github.com/login/oauth/authorize"
+    params = {
+        "client_id": github_client_id,
+        "redirect_uri": redirect_uri,
+        "state": state or "",
+        "scope": "repo user"
+    }
+    from urllib.parse import urlencode
+    auth_url = f"{base_url}?{urlencode(params)}"
+    return {"authorization_url": auth_url}
 
 class UserCreate(BaseModel):
     email: EmailStr

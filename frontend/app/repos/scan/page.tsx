@@ -118,7 +118,15 @@ export default function ScanRunPage() {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-              Compliance Scan #{scanId.substring(0, 6)}
+              Compliance Scan #
+              {scanId ? (
+                scanId.substring(0, 6)
+              ) : (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                  N/A
+                </span>
+              )}
               {status === "completed" ? (
                 <Badge className="bg-green-900/30 text-green-400 border-green-900/50">
                   Completed

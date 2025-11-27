@@ -25,7 +25,7 @@ from app.models.schemas import (
 )
 from app.services.embeddings import embeddings_service
 from app.services.llm import llm_service
-from app.workers.queue import job_queue
+from app.workers.job_queue import job_queue
 
 router = APIRouter(prefix="/analyze", tags=["analysis"])
 
@@ -57,7 +57,7 @@ async def analyze_rule(request: AnalyzeRuleRequest) -> AnalyzeRuleResponse:
 
     # Find similar code chunks
     async with db.acquire() as conn:
-        similar_chunks = await CodeChunkQueries.search_similar(
+        similar_chunks = await CodeMapQueries.search_similar(
             conn, rule_embedding, request.repo_id, top_k=request.top_k
         )
 
@@ -71,16 +71,16 @@ async def analyze_rule(request: AnalyzeRuleRequest) -> AnalyzeRuleResponse:
         similarity_score = 1.0 - chunk.get("distance", 1.0)
 
         matched_chunks.append(
-            CodeChunkResponse(
-                chunk_id=chunk["chunk_id"],
-                file_path=chunk["file_path"],
-                language=chunk["language"],
-                start_line=chunk["start_line"],
-                end_line=chunk["end_line"],
-                chunk_text=chunk["chunk_text"],
-                ast_node_type=chunk.get("ast_node_type"),
-                nl_summary=chunk.get("nl_summary"),
-                similarity_score=similarity_score,
+            CodeMapResponse(
+            chunk_id=chunk["chunk_id"],
+            file_path=chunk["file_path"],
+            language=chunk["language"],
+            start_line=chunk["start_line"],
+            end_line=chunk["end_line"],
+            chunk_text=chunk["chunk_text"],
+            ast_node_type=chunk.get("ast_node_type"),
+            nl_summary=chunk.get("nl_summary"),
+            similarity_score=similarity_score,
             )
         )
 
@@ -119,6 +119,7 @@ async def analyze_rule(request: AnalyzeRuleRequest) -> AnalyzeRuleResponse:
                         start_line=chunk["start_line"],
                         end_line=chunk["end_line"],
                         created_at=chunk["created_at"],
+                        status=analysis.get("status", "detected")
                     )
                 )
 
@@ -221,6 +222,7 @@ async def get_scan_results(
                     start_line=v["start_line"],
                     end_line=v["end_line"],
                     created_at=v["created_at"],
+                    status=v.get("status", "detected"),
                 )
                 for v in violation_records
             ]

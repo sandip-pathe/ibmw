@@ -9,7 +9,7 @@ from uuid import UUID
 
 from loguru import logger
 
-from app.workers.queue import job_queue
+from app.workers.job_queue import job_queue
 
 AgentType = Literal["PLANNER", "NAVIGATOR", "INVESTIGATOR", "JUDGE", "JIRA"]
 
@@ -39,16 +39,17 @@ class AgentLogger:
             if job_queue.async_redis is None:
                 await job_queue.connect_async()
             redis = job_queue.async_redis
-            if redis is None:
-                raise RuntimeError("Async Redis client not initialized")
+            import redis.asyncio
+            if not isinstance(redis, redis.asyncio.Redis):
+                raise RuntimeError("Async Redis client is not an instance of redis.asyncio.Redis")
 
             # Push to right end of list (append)
-            redis.rpush(self.redis_key, json.dumps(entry))
+            await redis.rpush(self.redis_key, json.dumps(entry))
 
             # Set expiration on first log if key doesn't have one
-            ttl = redis.ttl(self.redis_key)
+            ttl = await redis.ttl(self.redis_key)
             if isinstance(ttl, int) and ttl == -1:
-                redis.expire(self.redis_key, self.ttl)
+                await redis.expire(self.redis_key, self.ttl)
 
             logger.debug(f"[{agent}] {message}")
 
@@ -63,8 +64,9 @@ class AgentLogger:
             if job_queue.async_redis is None:
                 await job_queue.connect_async()
             redis = job_queue.async_redis
-            if redis is None:
-                raise RuntimeError("Async Redis client not initialized")
+            import redis.asyncio
+            if not isinstance(redis, redis.asyncio.Redis):
+                raise RuntimeError("Async Redis client is not an instance of redis.asyncio.Redis")
 
             raw_logs = await redis.lrange(self.redis_key, start_index, -1)
             return [json.loads(log) for log in raw_logs]

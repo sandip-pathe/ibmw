@@ -10,10 +10,10 @@ from app.config import get_settings
 from app.core.security import verify_admin_api_key
 from app.database import get_db
 from app.models.database import RegulationChunkQueries
-from app.models.schemas import HealthResponse, SuccessResponse
+from app.models.schemas import HealthResponse, SuccessResponse, RegulationChunkResponse
 from app.services.embeddings import embeddings_service
 from app.services.regulation_processor import regulation_processor
-from app.workers.queue import job_queue
+from app.workers.job_queue import job_queue
 
 settings = get_settings()
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -49,8 +49,9 @@ async def health_check() -> HealthResponse:
     # Check Redis
     try:
         await job_queue.connect_async()
-        await job_queue.async_redis.ping()
-        services["redis"] = True
+        # Use a valid method to check Redis connectivity
+        if await job_queue.connect_async():
+            services["redis"] = True
     except Exception as e:
         logger.warning(f"Redis health check failed: {e}")
 
@@ -158,7 +159,7 @@ async def upload_regulation(rule_id: str, source_document: str, chunks: list[dic
         text_hash = embeddings_service.compute_text_hash(chunk["chunk_text"])
         cached_embedding = await job_queue.get_cached_embedding(text_hash)
 
-        if cached_embedding:
+        if cached_embedding is not None:
             chunk["embedding"] = cached_embedding
         else:
             embedding = await embeddings_service.embed_text(chunk["chunk_text"])
