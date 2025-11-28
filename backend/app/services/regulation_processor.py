@@ -151,7 +151,14 @@ class RegulationProcessor:
 
         Returns:
             List of regulation chunks
+            
+        Raises:
+            NotImplementedError: If Azure DI not configured
+            ValueError: If PDF is invalid
         """
+        if not pdf_bytes:
+            raise ValueError("PDF bytes cannot be empty")
+        
         if self.doc_intelligence_enabled:
             return await self._process_with_doc_intelligence(
                 pdf_bytes, rule_id, source_document
@@ -201,29 +208,48 @@ class RegulationProcessor:
 
         Returns:
             Processed regulation chunks
+            
+        Raises:
+            ValueError: If chunks_data is invalid
         """
+        if not chunks_data:
+            raise ValueError("chunks_data cannot be empty")
+        
+        if not isinstance(chunks_data, list):
+            raise ValueError("chunks_data must be a list")
+        
         import hashlib
 
         processed_chunks = []
 
-        for i, chunk in enumerate(chunks_data):
-            chunk_text = chunk.get("text", chunk.get("chunk_text", ""))
-            chunk_hash = hashlib.sha256(chunk_text.encode("utf-8")).hexdigest()
+        try:
+            for i, chunk in enumerate(chunks_data):
+                chunk_text = chunk.get("text", chunk.get("chunk_text", ""))
+                
+                if not chunk_text:
+                    logger.warning(f"Skipping empty chunk at index {i}")
+                    continue
+                
+                chunk_hash = hashlib.sha256(chunk_text.encode("utf-8")).hexdigest()
 
-            processed_chunks.append(
-                {
-                    "rule_id": rule_id,
-                    "rule_section": chunk.get("section", chunk.get("rule_section")),
-                    "source_document": source_document,
-                    "chunk_text": chunk_text,
-                    "chunk_index": i,
-                    "chunk_hash": chunk_hash,
-                    "metadata": chunk.get("metadata", {}),
-                }
-            )
+                processed_chunks.append(
+                    {
+                        "rule_id": rule_id,
+                        "rule_section": chunk.get("section", chunk.get("rule_section")),
+                        "source_document": source_document,
+                        "chunk_text": chunk_text,
+                        "chunk_index": i,
+                        "chunk_hash": chunk_hash,
+                        "metadata": chunk.get("metadata", {}),
+                    }
+                )
 
-        logger.info(f"Processed {len(processed_chunks)} regulation chunks for {rule_id}")
-        return processed_chunks
+            logger.info(f"Processed {len(processed_chunks)} regulation chunks for {rule_id}")
+            return processed_chunks
+            
+        except Exception as e:
+            logger.error(f"Failed to process JSON chunks: {e}")
+            raise ValueError(f"Invalid chunk data: {str(e)}") from e
 
 
 # Global processor instance

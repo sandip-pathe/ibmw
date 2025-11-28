@@ -216,3 +216,196 @@ class ErrorResponse(BaseModel):
 class SuccessResponse(BaseModel):
     message: str
     data: Optional[dict[str, Any]] = None
+
+
+# --- COMPLIANCE RESULT SCHEMAS ---
+
+class ComplianceResult(BaseModel):
+    """Structured compliance result from Rule Matcher agent."""
+    result_id: Optional[UUID] = None
+    rule_id: str
+    repo_id: UUID
+    file_path: str
+    start_line: int
+    end_line: int
+    verdict: Literal["compliant", "non_compliant", "partial", "unclear"]
+    confidence: float = Field(ge=0.0, le=1.0)
+    evidence: str
+    reasoning: str
+    remediation_suggestion: Optional[str] = None
+    severity: Literal["critical", "high", "medium", "low"] = "medium"
+    tags: List[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: Optional[datetime] = None
+
+
+class ComplianceResultBatch(BaseModel):
+    """Batch of compliance results."""
+    results: List[ComplianceResult]
+    total_checked: int
+    compliant_count: int
+    non_compliant_count: int
+    partial_count: int
+    unclear_count: int
+
+
+# --- AUDIT CASE SCHEMAS ---
+
+class AuditCaseState(BaseModel):
+    """Complete audit case state for orchestration."""
+    case_id: UUID
+    repo_id: UUID
+    regulation_ids: List[str]
+    status: Literal["pending", "running", "waiting_approval", "completed", "failed", "paused"]
+    current_step: Optional[str] = None
+    steps_completed: List[str] = Field(default_factory=list)
+    steps_pending: List[str] = Field(default_factory=list)
+    error_message: Optional[str] = None
+    
+    # Agent outputs
+    rule_ingestion_result: Optional[dict[str, Any]] = None
+    code_scan_result: Optional[dict[str, Any]] = None
+    compliance_check_result: Optional[dict[str, Any]] = None
+    report_data: Optional[dict[str, Any]] = None
+    
+    # HITL
+    requires_approval: bool = False
+    approval_items: List[dict[str, Any]] = Field(default_factory=list)
+    user_decision: Optional[str] = None
+    
+    started_at: datetime
+    updated_at: datetime
+    completed_at: Optional[datetime] = None
+
+
+class AuditCaseCreate(BaseModel):
+    """Request to create audit case."""
+    repo_id: UUID
+    regulation_ids: List[str]
+    options: dict[str, Any] = Field(default_factory=dict)
+
+
+class AuditCaseResponse(BaseModel):
+    """Audit case response."""
+    case_id: UUID
+    repo_id: UUID
+    status: str
+    current_step: Optional[str] = None
+    progress: float = Field(ge=0.0, le=100.0)
+    message: Optional[str] = None
+
+
+# --- MCP SERVER SCHEMAS ---
+
+class MCPRunAuditRequest(BaseModel):
+    """MCP request to run audit."""
+    repo_id: UUID
+    regulators: List[str] = Field(description="List of regulator IDs: RBI, SEBI, etc.")
+    options: dict[str, Any] = Field(default_factory=dict)
+
+
+class MCPRunAuditResponse(BaseModel):
+    """MCP response for run audit."""
+    case_id: UUID
+    status: str
+    message: str
+
+
+class MCPResumeAuditRequest(BaseModel):
+    """MCP request to resume paused audit."""
+    case_id: UUID
+
+
+class MCPSyncRegulationRequest(BaseModel):
+    """MCP request to sync regulation."""
+    regulator: str
+    document_type: str
+    document_url: Optional[str] = None
+    document_data: Optional[dict[str, Any]] = None
+
+
+class MCPIndexRepoRequest(BaseModel):
+    """MCP request to index repository."""
+    repo_id: UUID
+    force_refresh: bool = False
+
+
+class MCPCheckRuleRequest(BaseModel):
+    """MCP request to check single rule against repo."""
+    rule_id: str
+    repo_id: UUID
+
+
+# --- HITL REVIEW SCHEMAS ---
+
+class HITLExplainRequest(BaseModel):
+    """Request to explain a finding."""
+    result_id: Optional[UUID] = None
+    violation_id: Optional[UUID] = None
+    scan_id: Optional[UUID] = None
+    question: str = Field(description="Specific question about the finding")
+
+
+class HITLExplainResponse(BaseModel):
+    """Response with explanation."""
+    explanation: str
+    evidence: List[str] = Field(default_factory=list)
+    related_rules: List[str] = Field(default_factory=list)
+    confidence: float
+
+
+class HITLSuggestFixRequest(BaseModel):
+    """Request fix suggestion for violation."""
+    violation_id: UUID
+    context: Optional[str] = None
+
+
+class HITLSuggestFixResponse(BaseModel):
+    """Fix suggestion response."""
+    suggested_fix: str
+    code_snippet: Optional[str] = None
+    steps: List[str] = Field(default_factory=list)
+    rationale: str
+    confidence: float
+
+
+class HITLReviewDecision(BaseModel):
+    """Human review decision."""
+    item_id: UUID
+    decision: Literal["approve", "reject", "request_changes"]
+    note: Optional[str] = None
+    changes: Optional[dict[str, Any]] = None
+
+
+# --- REPORT SCHEMAS ---
+
+class ReportOutline(BaseModel):
+    """Report structure outline."""
+    sections: List[dict[str, Any]]
+    coverage_summary: dict[str, Any]
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ReportValidationResult(BaseModel):
+    """Report validation result."""
+    is_valid: bool
+    missing_sections: List[str] = Field(default_factory=list)
+    missing_rules: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    suggestions: List[str] = Field(default_factory=list)
+
+
+class GenerateReportRequest(BaseModel):
+    """Request to generate report."""
+    case_id: UUID
+    format: Literal["html", "pdf", "json"] = "html"
+    template: Optional[str] = None
+
+
+class GenerateReportResponse(BaseModel):
+    """Generated report response."""
+    report_id: UUID
+    case_id: UUID
+    format: str
+    download_url: Optional[str] = None
+    content: Optional[str] = None

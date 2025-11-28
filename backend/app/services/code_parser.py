@@ -315,6 +315,69 @@ class CodeParser:
                         }
                     )
         return chunks
+    
+    def parse_file_changes(
+        self,
+        file_path: str,
+        old_content: Optional[str],
+        new_content: str
+    ) -> dict[str, any]:
+        """
+        Parse file changes for incremental updates (webhook support).
+        
+        Args:
+            file_path: File path
+            old_content: Previous file content (None if new file)
+            new_content: Current file content
+            
+        Returns:
+            Change information including delta_type
+        """
+        language = self.get_language_from_extension(file_path)
+        if not language:
+            return {"delta_type": "unknown", "chunks": []}
+        
+        # Parse new content
+        new_chunks = self.extract_functions_fallback(new_content, language)
+        
+        # Determine delta type
+        if old_content is None:
+            delta_type = "added"
+            for chunk in new_chunks:
+                chunk["delta_type"] = "added"
+                chunk["previous_hash"] = None
+        elif old_content == new_content:
+            delta_type = "unchanged"
+            for chunk in new_chunks:
+                chunk["delta_type"] = "unchanged"
+        else:
+            delta_type = "modified"
+            # Parse old content for comparison
+            old_chunks = self.extract_functions_fallback(old_content, language)
+            old_chunk_map = {c["name"]: c for c in old_chunks}
+            
+            for chunk in new_chunks:
+                old_chunk = old_chunk_map.get(chunk["name"])
+                if old_chunk:
+                    if old_chunk["text"] == chunk["text"]:
+                        chunk["delta_type"] = "unchanged"
+                    else:
+                        chunk["delta_type"] = "modified"
+                        chunk["previous_hash"] = self._hash_text(old_chunk["text"])
+                else:
+                    chunk["delta_type"] = "added"
+                    chunk["previous_hash"] = None
+        
+        return {
+            "delta_type": delta_type,
+            "chunks": new_chunks,
+            "language": language
+        }
+    
+    def _hash_text(self, text: str) -> str:
+        """Hash text content for change detection"""
+        import hashlib
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 # Global parser instance

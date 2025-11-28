@@ -18,9 +18,11 @@ from app.api import (
     user_repos, 
     auth, 
     regulations,
-    violations,   # New
-    integrations,  # New
-    job_status     # <-- Add job status router
+    violations,
+    integrations,
+    job_status,
+    mcp_server,    # MCP orchestration endpoints
+    hitl_review    # HITL reviewer tools
 )
 from app.config import get_settings
 from app.database import db
@@ -126,9 +128,11 @@ app.include_router(analysis.router)
 app.include_router(admin.router)
 app.include_router(user_repos.router)
 app.include_router(regulations.router)
-app.include_router(violations.router)    # New
-app.include_router(integrations.router)  # New
-app.include_router(job_status.router)    # <-- Add job status router
+app.include_router(violations.router)
+app.include_router(integrations.router)
+app.include_router(job_status.router)
+app.include_router(mcp_server.router)    # MCP orchestration endpoints
+app.include_router(hitl_review.router)   # HITL reviewer tools
 
 # Root endpoint
 @app.get("/")

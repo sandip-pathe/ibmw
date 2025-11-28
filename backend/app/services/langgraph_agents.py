@@ -79,9 +79,18 @@ class BaseAgent(ABC):
             return result
         except Exception as e:
             self.completed_at = datetime.utcnow()
-            await self.save_execution("failed", {"error": str(e)})
+            error_details = {
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "agent": self.agent_type,
+                "scan_id": self.scan_id
+            }
+            await self.save_execution("failed", error_details)
             await self.log(f"❌ {self.agent_type} agent failed: {str(e)}")
-            raise
+            logger.error(f"Agent {self.agent_type} execution failed", exc_info=True)
+            
+            # Re-raise with context
+            raise RuntimeError(f"Agent {self.agent_type} failed: {str(e)}") from e
     
     def get_demo_delay(self) -> float:
         return {"PLANNER": 2.0, "NAVIGATOR": 2.5, "INVESTIGATOR": 3.0, "JUDGE": 1.5, "JIRA": 1.0}.get(self.agent_type, 1.5)
